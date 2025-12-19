@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SINTER - Assistente de Documentos</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome para ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: radial-gradient(circle at 20% 20%, rgba(99,102,241,0.08), transparent 30%), #0b1220;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #e5e7eb;
+        }
+        .navbar-brand {
+            font-weight: 700;
+            color: #0ea5e9;
+        }
+        .sidebar {
+            background: linear-gradient(160deg, #0a2440 0%, #0c3b5c 100%);
+            border: 1px solid #134b73;
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+            position: sticky;
+            top: 20px;
+        }
+        .sidebar h5 {
+            color: #fff;
+            margin-bottom: 12px;
+        }
+        .sidebar ul {
+            list-style: none;
+            padding-left: 0;
+            margin: 0;
+        }
+        .sidebar li {
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid #1f2937;
+            background: #111827;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .sidebar li .using {
+            color: #10b981;
+            font-size: 12px;
+        }
+        .document-container {
+            background: #0f172a;
+            border: 1px solid #1f2937;
+            border-radius: 14px;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .btn-custom {
+            border-radius: 20px;
+            padding: 10px 22px;
+            font-weight: 600;
+        }
+        .history-item {
+            border-left: 4px solid #0ea5e9;
+            padding-left: 15px;
+            margin-bottom: 15px;
+        }
+        .user-question {
+            background-color: #0b1220;
+            padding: 12px;
+            border-radius: 8px;
+        }
+        .bot-answer {
+            background-color: #0b1220;
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 3px solid #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-robot me-2"></i>SINTER Assistente
+            </a>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row g-4">
+            <div class="col-12 col-lg-3">
+                <div class="sidebar">
+                    <h5 class="d-flex align-items-center mb-3">
+                        <i class="fas fa-layer-group me-2 text-info"></i>Fontes de pesquisa
+                    </h5>
+                    <ul>
+                        <li>
+                            <i class="fas fa-database text-warning"></i>
+                            <span>A tabela imóveis está liberada para pesquisa via agente SQL.</span>
+                        </li>
+                        {% if available_docs %}
+                            {% for doc in available_docs %}
+                                <li>
+                                    <i class="fas fa-file-alt text-primary"></i>
+                                    <span>{{ doc }}</span>
+                                    {% if rules_path and doc in rules_path %}
+                                        <span class="using">(usando)</span>
+                                    {% endif %}
+                                </li>
+                            {% endfor %}
+                        {% else %}
+                            <li>
+                                <i class="fas fa-exclamation-triangle text-warning"></i>
+                                <span>Nenhum documento encontrado. Adicione PDFs ou TXT na pasta indicada.</span>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </div>
+
+            <div class="col-12 col-lg-9">
+                <!-- Formulário de Pergunta -->
+                <div class="document-container">
+                    <form method="post" class="mb-4">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="query" class="form-label fw-bold">
+                                <i class="fas fa-question-circle me-1"></i>Faça sua pergunta:
+                            </label>
+                            <div class="input-group">
+                                <input type="text" class="form-control form-control-lg" id="query" name="query" placeholder="Digite sua pergunta aqui..." value="{{ query }}">
+                                <button type="submit" name="action" value="ask" class="btn btn-primary btn-custom" id="ask-btn">
+                                    <i class="fas fa-paper-plane me-1"></i> Perguntar
+                                    <span class="spinner-border spinner-border-sm ms-2 d-none" id="ask-spinner" role="status" aria-hidden="true"></span>
+                                </button>
+                                <button type="submit" name="action" value="clear" class="btn btn-outline-secondary btn-custom">
+                                    <i class="fas fa-broom me-1"></i> Limpar
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    {% if error_message %}
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            <i class="fas fa-exclamation-circle me-2"></i>{{ error_message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <!-- Histórico de Conversas -->
+                <div class="document-container mt-4">
+                    <h4 class="mb-3"><i class="fas fa-history me-2"></i>Histórico de Conversa</h4>
+                    
+                    {% if history %}
+                    <div class="timeline">
+                        {% for item in history %}
+                            <div class="history-item mb-4">
+                                {% if item.role == 'user' %}
+                                    <div class="user-question mb-2">
+                                        <strong><i class="fas fa-user me-2"></i>Pergunta {{ item.number }}</strong>
+                                        <p class="mb-0 mt-2">{{ item.content }}</p>
+                                    </div>
+                                {% else %}
+                                    <div class="bot-answer">
+                                        <strong><i class="fas fa-robot me-2"></i>Resposta</strong>
+                                        <p class="mb-0 mt-2">{{ item.content }}</p>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="alert alert-secondary" role="alert">
+                        Nenhuma conversa ainda. Envie uma pergunta para iniciar o histórico.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS Bundle com Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        (function() {
+            const form = document.querySelector('form');
+            const askBtn = document.getElementById('ask-btn');
+            const askSpinner = document.getElementById('ask-spinner');
+            const buttons = form ? form.querySelectorAll('button') : [];
+            if (form && askBtn && askSpinner) {
+                form.addEventListener('submit', function(ev) {
+                    const action = ev.submitter ? ev.submitter.value : 'ask';
+                    if (action === 'ask') {
+                        askSpinner.classList.remove('d-none');
+                        buttons.forEach(el => el.disabled = true);
+                    }
+                });
+            }
+        })();
+    </script>
+</body>
+</html>
