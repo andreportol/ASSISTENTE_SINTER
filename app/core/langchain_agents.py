@@ -224,6 +224,60 @@ def generate_code(question: str, history: List[Tuple[str, str]] | None = None) -
     return "Não foi possível gerar o código solicitado."
 
 
+def build_chart_agent():
+    """
+    Agente para sugerir gráficos e dashboards.
+    Usa o banco para obter métricas e o documento de regras para entender contexto ou definições.
+    """
+    llm = get_chat_llm()
+
+    db_tool = Tool(
+        name="consultar_banco",
+        func=ask_database,
+        description="Busque valores ou agregações reais no Postgres antes de propor um gráfico.",
+    )
+    rules_tool = Tool(
+        name="consultar_regras",
+        func=ask_rules_document,
+        description="Use para entender definições ou regras de negócio que impactam o gráfico.",
+    )
+
+    system_prompt = (
+        "Você é um consultor de visualização de dados. Proponha gráficos e dashboards acionáveis. "
+        "Sempre que precisar de números reais, chame 'consultar_banco' para gerar a consulta. "
+        "Use 'consultar_regras' quando precisar de definições ou contexto de negócio. "
+        "Sempre escreva consultas de leitura agregadas (COUNT, SUM, AVG etc.) com GROUP BY, "
+        "sem SELECT *, e inclua LIMIT 200 ou menos para evitar carregar grandes volumes. "
+        "Responda em passos curtos: objetivo, consultas SQL sugeridas (apenas leitura), "
+        "campos para eixo/legenda, tipo de gráfico recomendado e anotações de uso."
+    )
+
+    return create_agent(
+        model=llm,
+        tools=[db_tool, rules_tool],
+        system_prompt=system_prompt,
+    )
+
+
+def generate_charts(question: str, history: List[Tuple[str, str]] | None = None) -> str:
+    print("[agent] gerador de gráficos recebendo pergunta:", question)
+    agent = build_chart_agent()
+    msgs = history[:] if history else []
+    msgs.append(("user", question))
+    result = agent.invoke({"messages": msgs})
+    if isinstance(result, dict) and "messages" in result:
+        messages = result.get("messages") or []
+        if messages:
+            final_msg = messages[-1]
+            try:
+                content = final_msg.content  # type: ignore[assignment]
+            except Exception:
+                content = str(final_msg)
+            if content:
+                return content
+    return "Não foi possível sugerir gráficos com as fontes locais."
+
+
 def build_manager_agent():
     """Agente que decide automaticamente entre banco e documento."""
     llm = get_chat_llm()
@@ -246,17 +300,24 @@ def build_manager_agent():
         description="Use para gerar código SQL ou Python com base nas regras e no esquema do banco.",
     )
 
+    chart_tool = Tool(
+        name="gerar_graficos",
+        func=generate_charts,
+        description="Use para propor gráficos e dashboards; consulte o banco para métricas reais.",
+    )
+
     system_prompt = (
         "Você é um agente autônomo que decide a melhor fonte de dados.\n"
         "- Use 'consultar_banco' para perguntas sobre registros, contagens ou valores no Postgres.\n"
         "- Use 'consultar_regras' para perguntas sobre regras, procedimentos ou texto do documento.\n"
         "- Use 'gerar_codigo' quando o usuário pedir código SQL ou Python.\n"
+        "- Use 'gerar_graficos' quando o usuário pedir gráficos, dashboards ou visualizações.\n"
         "Responda apenas com base nas ferramentas locais; não use conhecimento externo."
     )
 
     return create_agent(
         model=llm,
-        tools=[db_tool, rules_tool, code_tool],
+        tools=[db_tool, rules_tool, code_tool, chart_tool],
         system_prompt=system_prompt,
     )
 

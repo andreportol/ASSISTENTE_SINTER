@@ -150,6 +150,28 @@
                             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                         </div>
                     {% endif %}
+
+                    {% if chart_error %}
+                        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                            <i class="fas fa-chart-bar me-2"></i>{{ chart_error }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endif %}
+
+                    {% if chart_data %}
+                        <div class="document-container mt-3">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Gráfico gerado</h5>
+                                {% if chart_data.truncated %}
+                                    <small class="text-warning">Mostrando {{ chart_data.max_rows }} primeiros registros (resultado truncado).</small>
+                                {% else %}
+                                    <small class="text-muted">Dados retornados da consulta.</small>
+                                {% endif %}
+                            </div>
+                            <canvas id="result-chart" height="240"></canvas>
+                        </div>
+                        {{ chart_data|json_script:"chart-data" }}
+                    {% endif %}
                 </div>
 
                 <!-- Histórico de Conversas -->
@@ -186,6 +208,7 @@
 
     <!-- Bootstrap 5 JS Bundle com Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         (function() {
             const form = document.querySelector('form');
@@ -201,6 +224,44 @@
                     }
                 });
             }
+        })();
+
+        (function() {
+            const chartDataEl = document.getElementById('chart-data');
+            const chartCanvas = document.getElementById('result-chart');
+            if (!chartDataEl || !chartCanvas || !window.Chart) return;
+
+            const cfg = JSON.parse(chartDataEl.textContent);
+            const palette = [
+                '#0ea5e9','#22c55e','#f97316','#a855f7','#f43f5e',
+                '#14b8a6','#eab308','#3b82f6','#8b5cf6','#ef4444'
+            ];
+            const colors = cfg.labels.map((_, idx) => palette[idx % palette.length]);
+
+            new Chart(chartCanvas, {
+                type: cfg.type || 'bar',
+                data: {
+                    labels: cfg.labels,
+                    datasets: [{
+                        label: cfg.title || 'Gráfico',
+                        data: cfg.values,
+                        backgroundColor: cfg.type === 'pie' ? colors : 'rgba(14,165,233,0.55)',
+                        borderColor: cfg.type === 'pie' ? '#0b1220' : 'rgba(14,165,233,0.9)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: cfg.type !== 'bar', position: 'bottom' },
+                        tooltip: { enabled: true }
+                    },
+                    scales: cfg.type === 'pie' ? {} : {
+                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
         })();
     </script>
 </body>

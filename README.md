@@ -74,6 +74,8 @@ Abra http://127.0.0.1:8000 e faça perguntas. A barra lateral mostra as fontes c
 ## Uso dos agentes
 - **RAG (documento de regras):** usa o arquivo indicado em `CORE_RULES_PATH` ou o primeiro válido em `CORE_RULES_DIR`.
 - **SQL (Postgres):** requer DB_* configurados com engine Postgres; se o engine não for Postgres, o agente SQL é desabilitado.
+- **Código (SQL/Python):** gera snippets consultando regras e, quando possível, o esquema/dados do Postgres.
+- **Gráficos/Dashboards:** sugere visualizações; usa o banco para obter métricas reais e o documento de regras para entender contexto de negócio.
 
 ## Dicas e solução de problemas
 - Erro de chave OpenAI: verifique `OPENAI_API_KEY`.
