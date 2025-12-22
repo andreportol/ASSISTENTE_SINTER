@@ -146,7 +146,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # OpenAI / LangChain
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4.1')
+OPENAI_TEMPERATURE = float(os.getenv('OPENAI_TEMPERATURE', '0'))
+
+# Configurações de chunk/overlap para o RAG
+RAG_CHUNK_SIZE = int(os.getenv('RAG_CHUNK_SIZE', '700'))
+RAG_CHUNK_OVERLAP = int(os.getenv('RAG_CHUNK_OVERLAP', '150'))
 
 # Caminho para o documento de regras usado pelo RAG.
 # Defina CORE_RULES_PATH para um arquivo específico ou coloque arquivos em CORE_RULES_DIR (padrão: BASE_DIR/documents).

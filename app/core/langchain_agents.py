@@ -4,7 +4,9 @@ Helpers to run LangChain agents against Postgres and a rules document (RAG).
 
 from __future__ import annotations
 
+import json
 import os
+import uuid
 import warnings
 from functools import lru_cache
 from pathlib import Path
@@ -13,6 +15,9 @@ from urllib.parse import quote_plus
 
 from django.conf import settings
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from langchain.agents import create_agent
 from langchain_core.tools import Tool
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -37,7 +42,7 @@ def get_chat_llm() -> ChatOpenAI:
     return ChatOpenAI(
         api_key=get_openai_api_key(),
         model=getattr(settings, "OPENAI_MODEL", "gpt-4o-mini"),
-        temperature=0.1,
+        temperature=getattr(settings, "OPENAI_TEMPERATURE", 0.1),
     )
 
 
@@ -109,13 +114,19 @@ def _build_rules_retriever():
         loader = TextLoader(str(rules_path), encoding="utf-8")
 
     docs = loader.load()
-    splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=150)
+    chunk_size = getattr(settings, "RAG_CHUNK_SIZE", 700)
+    chunk_overlap = getattr(settings, "RAG_CHUNK_OVERLAP", 150)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     splits = splitter.split_documents(docs)
 
     vector_store = FAISS.from_documents(splits, embedding=embeddings)
     # Persiste para uso nos próximos carregamentos
     vector_store.save_local(str(index_path))
     return vector_store.as_retriever(search_kwargs={"k": 4})
+
+
+def reset_rules_retriever_cache() -> None:
+    _build_rules_retriever.cache_clear()
 
 
 def build_rules_agent():
@@ -278,6 +289,163 @@ def generate_charts(question: str, history: List[Tuple[str, str]] | None = None)
     return "Não foi possível sugerir gráficos com as fontes locais."
 
 
+def _get_charts_dir() -> Path:
+    charts_dir = Path(getattr(settings, "CHART_OUTPUT_DIR", Path(settings.BASE_DIR) / "documents" / "charts"))
+    charts_dir.mkdir(parents=True, exist_ok=True)
+    return charts_dir
+
+
+def _extract_series(data: list[dict[str, Any]], x_key: str, y_key: str) -> tuple[list[Any], list[float]]:
+    x_vals: list[Any] = []
+    y_vals: list[float] = []
+    for idx, row in enumerate(data):
+        if x_key not in row or y_key not in row:
+            raise ValueError(f"Linha {idx} precisa conter '{x_key}' e '{y_key}'.")
+        x_vals.append(row[x_key])
+        try:
+            y_vals.append(float(row[y_key]))
+        except Exception:
+            raise ValueError(f"Valor inválido para '{y_key}' na linha {idx}.")
+    return x_vals, y_vals
+
+
+def render_chart(chart_spec_json: str) -> str:
+    """
+    Renderiza um gráfico com matplotlib a partir de uma especificação JSON.
+    Campos esperados: chart_type, data, x, y, title (opcional), group_by (opcional), output_format (opcional).
+    """
+    try:
+        spec = json.loads(chart_spec_json)
+    except json.JSONDecodeError as exc:  # noqa: BLE001
+        raise ValueError("Especificação inválida: envie um JSON válido.") from exc
+
+    chart_type = (spec.get("chart_type") or "").lower()
+    if chart_type not in {"line", "bar", "pie", "area", "scatter"}:
+        raise ValueError("Tipo de gráfico inválido. Use line, bar, pie, area ou scatter.")
+
+    data = spec.get("data") or []
+    if not isinstance(data, list) or not data:
+        raise ValueError("data deve ser uma lista não vazia de objetos.")
+
+    x_key = spec.get("x")
+    y_key = spec.get("y")
+    if not x_key or not y_key:
+        raise ValueError("Campos 'x' e 'y' são obrigatórios.")
+
+    title = spec.get("title") or "Gráfico"
+    group_by = spec.get("group_by")
+    output_format = (spec.get("output_format") or "png").lower()
+    if output_format not in {"png", "svg"}:
+        raise ValueError("Formato inválido. Use png ou svg.")
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    if group_by:
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for row in data:
+            group_val = str(row.get(group_by, "grupo"))
+            grouped.setdefault(group_val, []).append(row)
+        for label, rows in grouped.items():
+            x_vals, y_vals = _extract_series(rows, x_key, y_key)
+            if chart_type == "bar":
+                ax.bar(x_vals, y_vals, label=label, alpha=0.85)
+            elif chart_type == "line":
+                ax.plot(x_vals, y_vals, marker="o", label=label)
+            elif chart_type == "area":
+                ax.fill_between(x_vals, y_vals, alpha=0.35, label=label)
+                ax.plot(x_vals, y_vals, linewidth=1, color="black", alpha=0.5)
+            elif chart_type == "scatter":
+                ax.scatter(x_vals, y_vals, label=label)
+            elif chart_type == "pie":
+                labels = [f"{label} | {val}" for val in x_vals]
+                ax.pie(y_vals, labels=labels, autopct="%1.1f%%")
+    else:
+        x_vals, y_vals = _extract_series(data, x_key, y_key)
+        if chart_type == "bar":
+            ax.bar(x_vals, y_vals, alpha=0.85)
+        elif chart_type == "line":
+            ax.plot(x_vals, y_vals, marker="o")
+        elif chart_type == "area":
+            ax.fill_between(x_vals, y_vals, alpha=0.35)
+            ax.plot(x_vals, y_vals, linewidth=1, color="black", alpha=0.5)
+        elif chart_type == "scatter":
+            ax.scatter(x_vals, y_vals)
+        elif chart_type == "pie":
+            ax.pie(y_vals, labels=[str(v) for v in x_vals], autopct="%1.1f%%")
+
+    ax.set_title(title)
+    if chart_type != "pie":
+        ax.set_xlabel(str(x_key))
+        ax.set_ylabel(str(y_key))
+        ax.grid(True, linestyle="--", alpha=0.2)
+        if group_by:
+            ax.legend(title=str(group_by))
+
+    charts_dir = _get_charts_dir()
+    file_name = f"{chart_type}_{uuid.uuid4().hex[:8]}.{output_format}"
+    file_path = charts_dir / file_name
+    fig.tight_layout()
+    fig.savefig(file_path, format=output_format, bbox_inches="tight")
+    plt.close(fig)
+
+    return json.dumps(
+        {
+            "file_path": str(file_path),
+            "chart_type": chart_type,
+            "rows_used": len(data),
+        },
+        ensure_ascii=False,
+    )
+
+
+def build_render_agent():
+    """
+    Agente responsável por renderizar gráficos com matplotlib.
+    Espera receber uma especificação JSON com dados já calculados.
+    """
+    llm = get_chat_llm()
+
+    render_tool = Tool(
+        name="renderizar_grafico",
+        func=render_chart,
+        description=(
+            "Renderiza gráficos com matplotlib. Envie um JSON com: "
+            "chart_type (line|bar|pie|area|scatter), data (lista de objetos), x, y, "
+            "title (opcional), group_by (opcional), output_format (png|svg)."
+        ),
+    )
+
+    system_prompt = (
+        "Você renderiza gráficos com base em dados prontos. Não invente dados. "
+        "Converta a solicitação do usuário em uma chamada para renderizar_grafico, "
+        "enviando o JSON completo com chart_type, data, x, y e opcionais."
+    )
+
+    return create_agent(
+        model=llm,
+        tools=[render_tool],
+        system_prompt=system_prompt,
+    )
+
+
+def render_chart_request(question: str, history: List[Tuple[str, str]] | None = None) -> str:
+    print("[agent] renderização de gráfico recebendo pergunta:", question)
+    agent = build_render_agent()
+    msgs = history[:] if history else []
+    msgs.append(("user", question))
+    result = agent.invoke({"messages": msgs})
+    if isinstance(result, dict) and "messages" in result:
+        messages = result.get("messages") or []
+        if messages:
+            final_msg = messages[-1]
+            try:
+                content = final_msg.content  # type: ignore[assignment]
+            except Exception:
+                content = str(final_msg)
+            if content:
+                return content
+    return "Não foi possível renderizar o gráfico."
+
+
 def build_manager_agent():
     """Agente que decide automaticamente entre banco e documento."""
     llm = get_chat_llm()
@@ -305,6 +473,11 @@ def build_manager_agent():
         func=generate_charts,
         description="Use para propor gráficos e dashboards; consulte o banco para métricas reais.",
     )
+    render_tool = Tool(
+        name="renderizar_grafico",
+        func=render_chart_request,
+        description="Use quando o usuário fornecer dados e pedir a renderização do gráfico.",
+    )
 
     system_prompt = (
         "Você é um agente autônomo que decide a melhor fonte de dados.\n"
@@ -312,12 +485,13 @@ def build_manager_agent():
         "- Use 'consultar_regras' para perguntas sobre regras, procedimentos ou texto do documento.\n"
         "- Use 'gerar_codigo' quando o usuário pedir código SQL ou Python.\n"
         "- Use 'gerar_graficos' quando o usuário pedir gráficos, dashboards ou visualizações.\n"
+        "- Use 'renderizar_grafico' quando receber dados prontos e precisar gerar a visualização.\n"
         "Responda apenas com base nas ferramentas locais; não use conhecimento externo."
     )
 
     return create_agent(
         model=llm,
-        tools=[db_tool, rules_tool, code_tool, chart_tool],
+        tools=[db_tool, rules_tool, code_tool, chart_tool, render_tool],
         system_prompt=system_prompt,
     )
 

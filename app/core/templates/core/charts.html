@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SINTER - Gráficos</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: radial-gradient(circle at 20% 20%, rgba(99,102,241,0.08), transparent 30%), #0b1220;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #e5e7eb;
+        }
+        .navbar-brand {
+            font-weight: 700;
+            color: #0ea5e9;
+        }
+        .document-container {
+            background: #0f172a;
+            border: 1px solid #1f2937;
+            border-radius: 14px;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .form-control,
+        .form-select {
+            background: #0b1220;
+            border-color: #1f2937;
+            color: #e2e8f0;
+        }
+        .form-text {
+            color: #94a3b8;
+        }
+        .btn-custom {
+            border-radius: 20px;
+            padding: 10px 22px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="{% url 'core-index' %}">
+                <i class="fas fa-chart-column me-2"></i>Gráficos (sem IA)
+            </a>
+            <div class="ms-auto">
+                <a class="btn btn-outline-primary btn-sm" href="{% url 'core-index' %}">
+                    <i class="fas fa-arrow-left me-1"></i>Voltar
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="document-container">
+            <h4 class="mb-3"><i class="fas fa-sliders-h me-2"></i>Gerar gráfico</h4>
+            <form method="post" class="row g-3">
+                {% csrf_token %}
+                <div class="col-md-6">
+                    <label class="form-label">Tabela</label>
+                    <select class="form-select" name="table" id="table-select">
+                        <option value="">Selecione...</option>
+                        {% for tbl in tables %}
+                            <option value="{{ tbl }}" {% if tbl == selected_table %}selected{% endif %}>{{ tbl }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Eixo X (categoria)</label>
+                    <select class="form-select" name="label_col" id="label-select">
+                        <option value="">Selecione...</option>
+                        {% for col in columns %}
+                            <option value="{{ col }}" {% if col == selected_label %}selected{% endif %}>{{ col }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Agregação</label>
+                    <select class="form-select" name="agg" id="agg-select">
+                        <option value="count" {% if selected_agg == 'count' %}selected{% endif %}>COUNT</option>
+                        <option value="sum" {% if selected_agg == 'sum' %}selected{% endif %}>SUM</option>
+                        <option value="avg" {% if selected_agg == 'avg' %}selected{% endif %}>AVG</option>
+                    </select>
+                    <div class="form-text">COUNT ignora a coluna numérica.</div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Coluna numérica</label>
+                    <select class="form-select" name="value_col" id="value-select">
+                        <option value="">Selecione...</option>
+                        {% for col in columns %}
+                            <option value="{{ col }}" {% if col == selected_value %}selected{% endif %}>{{ col }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Tipo de gráfico</label>
+                    <select class="form-select" name="chart_type">
+                        <option value="bar" {% if selected_chart_type == 'bar' %}selected{% endif %}>Barras</option>
+                        <option value="line" {% if selected_chart_type == 'line' %}selected{% endif %}>Linha</option>
+                        <option value="pie" {% if selected_chart_type == 'pie' %}selected{% endif %}>Pizza</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Limite</label>
+                    <input type="number" class="form-control" name="limit" value="{{ selected_limit }}" min="1" max="200">
+                </div>
+                <div class="col-12 d-flex gap-2">
+                    <button class="btn btn-primary btn-custom" type="submit" name="action" value="generate_chart">
+                        <i class="fas fa-chart-bar me-1"></i>Gerar gráfico
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        {% if error_message %}
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="fas fa-exclamation-circle me-2"></i>{{ error_message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endif %}
+
+        {% if chart_error %}
+            <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                <i class="fas fa-chart-bar me-2"></i>{{ chart_error }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endif %}
+
+        {% if chart_data %}
+            <div class="document-container mt-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>{{ chart_data.title }}</h5>
+                    <small class="text-muted">Dados retornados da consulta.</small>
+                </div>
+                <canvas id="result-chart" height="240"></canvas>
+            </div>
+            {{ chart_data|json_script:"chart-data" }}
+        {% endif %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        (function() {
+            const tableSelect = document.getElementById('table-select');
+            if (tableSelect) {
+                tableSelect.addEventListener('change', function() {
+                    if (tableSelect.value) {
+                        const form = tableSelect.closest('form');
+                        form.submit();
+                    }
+                });
+            }
+        })();
+
+        (function() {
+            const aggSelect = document.getElementById('agg-select');
+            const valueSelect = document.getElementById('value-select');
+            if (!aggSelect || !valueSelect) return;
+            const toggleValue = () => {
+                const isCount = aggSelect.value === 'count';
+                valueSelect.disabled = isCount;
+                if (isCount) {
+                    valueSelect.value = '';
+                }
+            };
+            aggSelect.addEventListener('change', toggleValue);
+            toggleValue();
+        })();
+
+        (function() {
+            const chartDataEl = document.getElementById('chart-data');
+            const chartCanvas = document.getElementById('result-chart');
+            if (!chartDataEl || !chartCanvas || !window.Chart) return;
+
+            const cfg = JSON.parse(chartDataEl.textContent);
+            const palette = [
+                '#0ea5e9','#22c55e','#f97316','#a855f7','#f43f5e',
+                '#14b8a6','#eab308','#3b82f6','#8b5cf6','#ef4444'
+            ];
+            const colors = cfg.labels.map((_, idx) => palette[idx % palette.length]);
+
+            new Chart(chartCanvas, {
+                type: cfg.type || 'bar',
+                data: {
+                    labels: cfg.labels,
+                    datasets: [{
+                        label: cfg.title || 'Gráfico',
+                        data: cfg.values,
+                        backgroundColor: cfg.type === 'pie' ? colors : 'rgba(14,165,233,0.55)',
+                        borderColor: cfg.type === 'pie' ? '#0b1220' : 'rgba(14,165,233,0.9)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: cfg.type !== 'bar', position: 'bottom' },
+                        tooltip: { enabled: true }
+                    },
+                    scales: cfg.type === 'pie' ? {} : {
+                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        })();
+    </script>
+</body>
+</html>
