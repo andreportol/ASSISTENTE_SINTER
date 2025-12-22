@@ -1,370 +1,79 @@
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SINTER - Assistente de Documentos</title>
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome para ícones -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body {
-            background: radial-gradient(circle at 20% 20%, rgba(99,102,241,0.08), transparent 30%), #0b1220;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: #e5e7eb;
-        }
-        .navbar-brand {
-            font-weight: 700;
-            color: #0ea5e9;
-        }
-        .sidebar {
-            background: linear-gradient(160deg, #0a2440 0%, #0c3b5c 100%);
-            border: 1px solid #134b73;
-            border-radius: 14px;
-            padding: 18px;
-            box-shadow: 0 12px 30px rgba(0,0,0,0.35);
-            position: sticky;
-            top: 20px;
-        }
-        .sidebar h5 {
-            color: #fff;
-            margin-bottom: 12px;
-        }
-        .sidebar ul {
-            list-style: none;
-            padding-left: 0;
-            margin: 0;
-        }
-        .sidebar li {
-            padding: 10px 12px;
-            border-radius: 10px;
-            border: 1px solid #1f2937;
-            background: #111827;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-        .sidebar .doc-meta {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            min-width: 0;
-        }
-        .sidebar .doc-name {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 180px;
-        }
-        .sidebar .doc-actions {
-            flex-shrink: 0;
-        }
-        .sidebar .upload-form {
-            margin-top: 16px;
-        }
-        .sidebar .upload-hint {
-            font-size: 12px;
-            color: #94a3b8;
-            margin-top: 6px;
-        }
-        .sidebar .upload-input {
-            background: #0b1220;
-            border-color: #1f2937;
-            color: #e2e8f0;
-        }
-        .config-card {
-            margin-top: 18px;
-        }
-        .config-card label {
-            font-size: 0.85rem;
-            color: #cbd5f5;
-        }
-        .config-card .form-control,
-        .config-card .form-select {
-            background: #0b1220;
-            border-color: #1f2937;
-            color: #e2e8f0;
-        }
-        .config-card .form-text {
-            color: #94a3b8;
-        }
-        .config-card .help-panel {
-            background: #0b1220;
-            border: 1px solid #1f2937;
-            border-radius: 10px;
-            padding: 12px;
-            font-size: 0.85rem;
-            color: #cbd5f5;
-        }
-        .sidebar li .using {
-            color: #10b981;
-            font-size: 12px;
-        }
-        .document-container {
-            background: #0f172a;
-            border: 1px solid #1f2937;
-            border-radius: 14px;
-            box-shadow: 0 12px 30px rgba(0,0,0,0.35);
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-        .btn-custom {
-            border-radius: 20px;
-            padding: 10px 22px;
-            font-weight: 600;
-        }
-        .history-item {
-            border-left: 4px solid #0ea5e9;
-            padding-left: 15px;
-            margin-bottom: 15px;
-        }
-        .user-question {
-            background-color: #0b1220;
-            padding: 12px;
-            border-radius: 8px;
-        }
-        .bot-answer {
-            background-color: #0b1220;
-            padding: 12px;
-            border-radius: 8px;
-            border-left: 3px solid #6c757d;
-        }
-        .answer-content {
-            margin-top: 10px;
-            display: grid;
-            gap: 10px;
-        }
-        .answer-text {
-            margin: 0;
-            line-height: 1.6;
-            white-space: pre-wrap;
-        }
-        .answer-content pre {
-            background: #0b1020;
-            border: 1px solid #1f2937;
-            border-radius: 10px;
-            padding: 12px 14px;
-            margin: 0;
-            overflow-x: auto;
-            position: relative;
-        }
-        .answer-content pre[data-lang]::before {
-            content: attr(data-lang);
-            position: absolute;
-            top: 6px;
-            right: 10px;
-            font-size: 0.65rem;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: #94a3b8;
-        }
-        .answer-content code {
-            font-family: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
-            font-size: 0.88rem;
-            color: #e2e8f0;
-        }
-    </style>
-</head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm mb-4">
-        <div class="container">
-            <a class="navbar-brand" href="#">
-                <i class="fas fa-robot me-2"></i>Dúvidas? Pergunte a Analista Virtual!
-            </a>
-            <div class="ms-auto">
-                <a class="btn btn-outline-primary btn-sm" href="{% url 'core-charts' %}">
-                    <i class="fas fa-chart-column me-1"></i>Gráficos
-                </a>
-            </div>
+{% extends "core/base.html" %}
+{% load static %}
+
+{% block title %}SINTER - Assistente de Documentos{% endblock %}
+
+{% block body %}
+<div class="container-fluid">
+    <div class="row g-4">
+        <div class="col-12 col-lg-3">
+            {% include "core/sidebar.html" %}
         </div>
-    </nav>
 
-    <div class="container-fluid">
-        <div class="row g-4">
-            <div class="col-12 col-lg-3">
-                <div class="sidebar">
-                    <h5 class="d-flex align-items-center mb-3">
-                        <i class="fas fa-layer-group me-2 text-info"></i>Fontes de pesquisa
-                    </h5>
-                    <ul>
-                        <li>
-                            <div class="doc-meta">
-                                <i class="fas fa-database text-warning"></i>
-                                <span class="doc-name">A tabela imóveis está liberada para pesquisa via agente SQL.</span>
-                            </div>
-                        </li>
-                        {% if available_docs %}
-                            {% for doc in available_docs %}
-                                <li>
-                                    <div class="doc-meta">
-                                        <i class="fas fa-file-alt text-primary"></i>
-                                        <span class="doc-name">{{ doc }}</span>
-                                        {% if rules_path and doc in rules_path %}
-                                            <span class="using">(usando)</span>
-                                        {% endif %}
-                                    </div>
-                                    <div class="doc-actions">
-                                        <form method="post">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="doc_name" value="{{ doc }}">
-                                            <button type="submit" name="action" value="delete_doc" class="btn btn-sm btn-outline-danger">
-                                                Remover
-                                            </button>
-                                        </form>
-                                    </div>
-                                </li>
-                            {% endfor %}
-                        {% else %}
-                            <li>
-                                <div class="doc-meta">
-                                    <i class="fas fa-exclamation-triangle text-warning"></i>
-                                    <span class="doc-name">Nenhum documento encontrado. Adicione PDFs ou TXT na pasta indicada.</span>
-                                </div>
-                            </li>
-                        {% endif %}
-                    </ul>
-                    <form method="post" enctype="multipart/form-data" class="upload-form">
-                        {% csrf_token %}
-                        <div class="input-group input-group-sm">
-                            <input type="file" class="form-control upload-input" name="doc_file" accept=".pdf,.txt">
-                            <button class="btn btn-success" type="submit" name="action" value="upload">
-                                Enviar
+        <div class="col-12 col-lg-9">
+            <div class="document-container">
+                <form method="post" class="mb-4" id="ask-form">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="query" class="form-label fw-bold">
+                            <i class="fas fa-question-circle me-1"></i>Faça sua pergunta:
+                        </label>
+                        <div class="input-group">
+                            <input type="text" class="form-control form-control-lg" id="query" name="query" placeholder="Digite sua pergunta aqui..." value="{{ query }}" autofocus>
+                            <button type="submit" name="action" value="ask" class="btn btn-primary btn-custom" id="ask-btn">
+                                <i class="fas fa-paper-plane me-1"></i> Perguntar
+                            </button>
+                            <button type="submit" name="action" value="clear" class="btn btn-outline-secondary btn-custom">
+                                <i class="fas fa-broom me-1"></i> Limpar
                             </button>
                         </div>
-                        <div class="upload-hint">Formatos aceitos: PDF ou TXT.</div>
-                    </form>
-                </div>
+                        <div class="text-info mt-2 d-none" id="ask-spinner">
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            Processando sua pergunta...
+                        </div>
+                    </div>
+                </form>
 
-                <div class="sidebar config-card">
-                    <h5 class="d-flex align-items-center mb-3">
-                        <i class="fas fa-sliders-h me-2 text-warning"></i>Configurações do LLM
-                    </h5>
-                    {% if config_message %}
-                        <div class="alert alert-success alert-dismissible fade show" role="alert">
-                            <i class="fas fa-check-circle me-2"></i>{{ config_message }}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                {% if upload_message %}
+                    <div class="alert alert-success alert-dismissible fade show" role="alert">
+                        <i class="fas fa-check-circle me-2"></i>{{ upload_message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endif %}
+
+                {% if error_message %}
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <i class="fas fa-exclamation-circle me-2"></i>{{ error_message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endif %}
+
+                {% if chart_error %}
+                    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                        <i class="fas fa-chart-bar me-2"></i>{{ chart_error }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endif %}
+
+                {% if chart_data %}
+                    <div class="document-container mt-3">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>{{ chart_data.title }}</h5>
+                            {% if chart_data.truncated %}
+                                <small class="text-warning">Mostrando {{ chart_data.max_rows }} primeiros registros (resultado truncado).</small>
+                            {% else %}
+                                <small class="text-muted">Dados retornados da consulta.</small>
+                            {% endif %}
                         </div>
-                    {% endif %}
-                    <form method="post">
-                        {% csrf_token %}
-                        <div class="mb-2">
-                            <label for="llm-model" class="form-label">Modelo</label>
-                            <select class="form-select form-select-sm" id="llm-model" name="llm_model">
-                                <option value="gpt-5" {% if llm_config.model == 'gpt-5' %}selected{% endif %}>gpt-5</option>
-                                <option value="gpt-4.1" {% if llm_config.model == 'gpt-4.1' %}selected{% endif %}>gpt-4.1</option>
-                            </select>
-                            <div class="form-text">Escolha um modelo habilitado na sua chave.</div>
-                        </div>
-                        <div class="mb-2">
-                            <label for="llm-temperature" class="form-label">Temperatura</label>
-                            <input type="number" class="form-control form-control-sm" id="llm-temperature" name="llm_temperature" min="0" max="2" step="0.1" value="{{ llm_config.temperature|default:'0' }}">
-                            <div class="form-text">0 = respostas mais estáveis; 1-2 = mais criativas.</div>
-                        </div>
-                        <div class="mb-2">
-                            <label for="rag-chunk" class="form-label">Chunk</label>
-                            <input type="number" class="form-control form-control-sm" id="rag-chunk" name="rag_chunk_size" min="200" max="4000" step="50" value="{{ llm_config.chunk_size }}">
-                            <div class="form-text">Tamanho do pedaço de texto para indexação.</div>
-                        </div>
-                        <div class="mb-2">
-                            <label for="rag-overlap" class="form-label">Overlap</label>
-                            <input type="number" class="form-control form-control-sm" id="rag-overlap" name="rag_chunk_overlap" min="0" max="1000" step="10" value="{{ llm_config.chunk_overlap }}">
-                            <div class="form-text">Sobreposição entre chunks; deve ser menor que o chunk.</div>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="reindex-faiss" name="reindex_faiss" value="1">
-                            <label class="form-check-label" for="reindex-faiss">Reindexar FAISS agora</label>
-                        </div>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-sm btn-primary" type="submit" name="action" value="save_config">
-                                Salvar
-                            </button>
-                            <button class="btn btn-sm btn-outline-info" type="button" data-bs-toggle="collapse" data-bs-target="#llm-help">
-                                O que significa cada opção?
-                            </button>
-                        </div>
-                        <div class="collapse mt-3" id="llm-help">
-                            <div class="help-panel">
-                                <strong>Modelo:</strong> define a capacidade do LLM (mais potente = melhor contexto, mais custo).<br>
-                                <strong>Temperatura:</strong> controla criatividade; valores baixos dão respostas mais determinísticas.<br>
-                                <strong>Chunk:</strong> tamanho do trecho do documento; maior = mais contexto por trecho.<br>
-                                <strong>Overlap:</strong> repetição entre chunks; ajuda a não perder contexto entre cortes.<br>
-                                <strong>Reindexar FAISS agora:</strong> recria o índice com os documentos atuais; use após mudar chunk/overlap ou adicionar/remover arquivos.
-                            </div>
-                        </div>
-                    </form>
-                </div>
+                        <canvas id="result-chart" height="240"></canvas>
+                    </div>
+                    {{ chart_data|json_script:"chart-data" }}
+                {% endif %}
             </div>
 
-            <div class="col-12 col-lg-9">
-                <!-- Formulário de Pergunta -->
-                <div class="document-container">
-                    <form method="post" class="mb-4" id="ask-form">
-                        {% csrf_token %}
-                        <div class="mb-3">
-                            <label for="query" class="form-label fw-bold">
-                                <i class="fas fa-question-circle me-1"></i>Faça sua pergunta:
-                            </label>
-                            <div class="input-group">
-                                <input type="text" class="form-control form-control-lg" id="query" name="query" placeholder="Digite sua pergunta aqui..." value="{{ query }}">
-                                <button type="submit" name="action" value="ask" class="btn btn-primary btn-custom" id="ask-btn">
-                                    <i class="fas fa-paper-plane me-1"></i> Perguntar
-                                </button>
-                                <button type="submit" name="action" value="clear" class="btn btn-outline-secondary btn-custom">
-                                    <i class="fas fa-broom me-1"></i> Limpar
-                                </button>
-                            </div>
-                            <div class="text-info mt-2 d-none" id="ask-spinner">
-                                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                                Processando sua pergunta...
-                            </div>
-                        </div>
-                    </form>
-
-                    {% if upload_message %}
-                        <div class="alert alert-success alert-dismissible fade show" role="alert">
-                            <i class="fas fa-check-circle me-2"></i>{{ upload_message }}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    {% endif %}
-
-                    {% if error_message %}
-                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                            <i class="fas fa-exclamation-circle me-2"></i>{{ error_message }}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    {% endif %}
-
-                    {% if chart_error %}
-                        <div class="alert alert-warning alert-dismissible fade show" role="alert">
-                            <i class="fas fa-chart-bar me-2"></i>{{ chart_error }}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    {% endif %}
-
-                    {% if chart_data %}
-                        <div class="document-container mt-3">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Gráfico gerado</h5>
-                                {% if chart_data.truncated %}
-                                    <small class="text-warning">Mostrando {{ chart_data.max_rows }} primeiros registros (resultado truncado).</small>
-                                {% else %}
-                                    <small class="text-muted">Dados retornados da consulta.</small>
-                                {% endif %}
-                            </div>
-                            <canvas id="result-chart" height="240"></canvas>
-                        </div>
-                        {{ chart_data|json_script:"chart-data" }}
-                    {% endif %}
-                </div>
-
-                <!-- Histórico de Conversas -->
-                <div class="document-container mt-4">
-                    <h4 class="mb-3"><i class="fas fa-history me-2"></i>Histórico de Conversa</h4>
-                    
-                    {% if history %}
+            <div class="document-container mt-4">
+                <h4 class="mb-3"><i class="fas fa-history me-2"></i>Histórico de Conversa</h4>
+                {% if history %}
                     <div class="timeline">
                         {% for item in history %}
                             <div class="history-item mb-4">
@@ -384,130 +93,18 @@
                             </div>
                         {% endfor %}
                     </div>
-                    {% else %}
+                {% else %}
                     <div class="alert alert-secondary" role="alert">
                         Nenhuma conversa ainda. Envie uma pergunta para iniciar o histórico.
                     </div>
-                    {% endif %}
-                </div>
+                {% endif %}
             </div>
         </div>
     </div>
+</div>
+{% endblock %}
 
-    <!-- Bootstrap 5 JS Bundle com Popper -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script>
-        (function() {
-            const form = document.getElementById('ask-form');
-            const askBtn = document.getElementById('ask-btn');
-            const askSpinner = document.getElementById('ask-spinner');
-            const buttons = form ? form.querySelectorAll('button') : [];
-            if (form && askBtn && askSpinner) {
-                form.addEventListener('submit', function(ev) {
-                    const action = ev.submitter ? ev.submitter.value : 'ask';
-                    if (action === 'ask') {
-                        askSpinner.classList.remove('d-none');
-                        buttons.forEach(el => el.disabled = true);
-                    }
-                });
-            }
-        })();
-
-        (function() {
-            const chartDataEl = document.getElementById('chart-data');
-            const chartCanvas = document.getElementById('result-chart');
-            if (!chartDataEl || !chartCanvas || !window.Chart) return;
-
-            const cfg = JSON.parse(chartDataEl.textContent);
-            const palette = [
-                '#0ea5e9','#22c55e','#f97316','#a855f7','#f43f5e',
-                '#14b8a6','#eab308','#3b82f6','#8b5cf6','#ef4444'
-            ];
-            const colors = cfg.labels.map((_, idx) => palette[idx % palette.length]);
-
-            new Chart(chartCanvas, {
-                type: cfg.type || 'bar',
-                data: {
-                    labels: cfg.labels,
-                    datasets: [{
-                        label: cfg.title || 'Gráfico',
-                        data: cfg.values,
-                        backgroundColor: cfg.type === 'pie' ? colors : 'rgba(14,165,233,0.55)',
-                        borderColor: cfg.type === 'pie' ? '#0b1220' : 'rgba(14,165,233,0.9)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: { display: cfg.type !== 'bar', position: 'bottom' },
-                        tooltip: { enabled: true }
-                    },
-                    scales: cfg.type === 'pie' ? {} : {
-                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } },
-                        x: { grid: { display: false } }
-                    }
-                }
-            });
-        })();
-
-        (function() {
-            const languageHints = new Set([
-                'python','sql','json','html','css','js','javascript','typescript',
-                'bash','shell','yaml','yml','text','txt'
-            ]);
-            const containers = document.querySelectorAll('.bot-answer .answer-content');
-            containers.forEach((container) => {
-                const rawEl = container.querySelector('.answer-raw');
-                if (!rawEl) return;
-
-                const raw = rawEl.textContent || '';
-                if (!raw.includes('```')) {
-                    rawEl.classList.add('answer-text');
-                    return;
-                }
-
-                const parts = raw.split('```');
-                container.innerHTML = '';
-                parts.forEach((part, idx) => {
-                    if (!part) return;
-                    if (idx % 2 === 0) {
-                        if (part.trim()) {
-                            const p = document.createElement('p');
-                            p.className = 'answer-text';
-                            p.textContent = part.trim();
-                            container.appendChild(p);
-                        }
-                        return;
-                    }
-
-                    let code = part.replace(/^\n+/, '').replace(/\n+$/, '');
-                    let lang = '';
-                    const inlineLang = code.match(/^([A-Za-z0-9_-]+)\s+/);
-                    if (inlineLang && languageHints.has(inlineLang[1].toLowerCase())) {
-                        lang = inlineLang[1].toLowerCase();
-                        code = code.slice(inlineLang[0].length);
-                    } else {
-                        const firstLineEnd = code.indexOf('\n');
-                        if (firstLineEnd > -1) {
-                            const firstLine = code.slice(0, firstLineEnd).trim();
-                            if (languageHints.has(firstLine.toLowerCase())) {
-                                lang = firstLine.toLowerCase();
-                                code = code.slice(firstLineEnd + 1);
-                            }
-                        }
-                    }
-
-                    const pre = document.createElement('pre');
-                    if (lang) pre.setAttribute('data-lang', lang);
-                    const codeEl = document.createElement('code');
-                    codeEl.textContent = code;
-                    pre.appendChild(codeEl);
-                    container.appendChild(pre);
-                });
-            });
-        })();
-    </script>
-</body>
-</html>
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="{% static 'core/js/index.js' %}"></script>
+{% endblock %}

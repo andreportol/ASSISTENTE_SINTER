@@ -1,0 +1,111 @@
+<div class="sidebar">
+    <h5 class="d-flex align-items-center mb-3">
+        <i class="fas fa-layer-group me-2 text-info"></i>Fontes de pesquisa
+    </h5>
+    <ul>
+        <li>
+            <div class="doc-meta">
+                <i class="fas fa-database text-warning"></i>
+                <span class="doc-name">A tabela imóveis está liberada para pesquisa via agente SQL.</span>
+            </div>
+        </li>
+        {% if available_docs %}
+            {% for doc in available_docs %}
+                <li>
+                    <div class="doc-meta">
+                        <i class="fas fa-file-alt text-primary"></i>
+                        <span class="doc-name">{{ doc }}</span>
+                        {% if rules_path and doc in rules_path %}
+                            <span class="using">(usando)</span>
+                        {% endif %}
+                    </div>
+                    <div class="doc-actions">
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="doc_name" value="{{ doc }}">
+                            <button type="submit" name="action" value="delete_doc" class="btn btn-sm btn-outline-danger">
+                                Remover
+                            </button>
+                        </form>
+                    </div>
+                </li>
+            {% endfor %}
+        {% else %}
+            <li>
+                <div class="doc-meta">
+                    <i class="fas fa-exclamation-triangle text-warning"></i>
+                    <span class="doc-name">Nenhum documento encontrado. Adicione PDFs ou TXT na pasta indicada.</span>
+                </div>
+            </li>
+        {% endif %}
+    </ul>
+    <form method="post" enctype="multipart/form-data" class="upload-form">
+        {% csrf_token %}
+        <div class="input-group input-group-sm">
+            <input type="file" class="form-control upload-input" name="doc_file" accept=".pdf,.txt">
+            <button class="btn btn-success" type="submit" name="action" value="upload">
+                Enviar
+            </button>
+        </div>
+        <div class="upload-hint">Formatos aceitos: PDF ou TXT.</div>
+    </form>
+</div>
+
+<div class="sidebar config-card">
+    <h5 class="d-flex align-items-center mb-3">
+        <i class="fas fa-sliders-h me-2 text-warning"></i>Configurações do LLM
+    </h5>
+    {% if config_message %}
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="fas fa-check-circle me-2"></i>{{ config_message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    {% endif %}
+    <form method="post">
+        {% csrf_token %}
+        <div class="mb-2">
+            <label for="llm-model" class="form-label">Modelo</label>
+            <select class="form-select form-select-sm" id="llm-model" name="llm_model">
+                <option value="gpt-5" {% if llm_config.model == 'gpt-5' %}selected{% endif %}>gpt-5</option>
+                <option value="gpt-4.1" {% if llm_config.model == 'gpt-4.1' %}selected{% endif %}>gpt-4.1</option>
+            </select>
+            <div class="form-text">Escolha um modelo habilitado na sua chave.</div>
+        </div>
+        <div class="mb-2">
+            <label for="llm-temperature" class="form-label">Temperatura</label>
+            <input type="number" class="form-control form-control-sm" id="llm-temperature" name="llm_temperature" min="0" max="2" step="0.1" value="{{ llm_config.temperature|default:'0' }}">
+            <div class="form-text">0 = respostas mais estáveis; 1-2 = mais criativas.</div>
+        </div>
+        <div class="mb-2">
+            <label for="rag-chunk" class="form-label">Chunk</label>
+            <input type="number" class="form-control form-control-sm" id="rag-chunk" name="rag_chunk_size" min="200" max="4000" step="50" value="{{ llm_config.chunk_size }}">
+            <div class="form-text">Tamanho do pedaço de texto para indexação.</div>
+        </div>
+        <div class="mb-2">
+            <label for="rag-overlap" class="form-label">Overlap</label>
+            <input type="number" class="form-control form-control-sm" id="rag-overlap" name="rag_chunk_overlap" min="0" max="1000" step="10" value="{{ llm_config.chunk_overlap }}">
+            <div class="form-text">Sobreposição entre chunks; deve ser menor que o chunk.</div>
+        </div>
+        <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="reindex-faiss" name="reindex_faiss" value="1">
+            <label class="form-check-label" for="reindex-faiss">Reindexar FAISS agora</label>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-primary" type="submit" name="action" value="save_config">
+                Salvar
+            </button>
+            <button class="btn btn-sm btn-outline-info" type="button" data-bs-toggle="collapse" data-bs-target="#llm-help">
+                O que significa cada opção?
+            </button>
+        </div>
+        <div class="collapse mt-3" id="llm-help">
+            <div class="help-panel">
+                <strong>Modelo:</strong> define a capacidade do LLM (mais potente = melhor contexto, mais custo).<br>
+                <strong>Temperatura:</strong> controla criatividade; valores baixos dão respostas mais determinísticas.<br>
+                <strong>Chunk:</strong> tamanho do trecho do documento; maior = mais contexto por trecho.<br>
+                <strong>Overlap:</strong> repetição entre chunks; ajuda a não perder contexto entre cortes.<br>
+                <strong>Reindexar FAISS agora:</strong> recria o índice com os documentos atuais; use após mudar chunk/overlap ou adicionar/remover arquivos.
+            </div>
+        </div>
+    </form>
+</div>

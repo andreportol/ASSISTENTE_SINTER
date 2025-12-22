@@ -1,0 +1,166 @@
+body {
+    background: radial-gradient(circle at 20% 20%, rgba(99,102,241,0.08), transparent 30%), #0b1220;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #e5e7eb;
+}
+.navbar-brand {
+    font-weight: 700;
+    color: #0ea5e9;
+}
+.document-container {
+    background: #0f172a;
+    border: 1px solid #1f2937;
+    border-radius: 14px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    padding: 20px;
+    margin-bottom: 20px;
+}
+.btn-custom {
+    border-radius: 20px;
+    padding: 10px 22px;
+    font-weight: 600;
+}
+.sidebar {
+    background: linear-gradient(160deg, #0a2440 0%, #0c3b5c 100%);
+    border: 1px solid #134b73;
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    position: sticky;
+    top: 20px;
+}
+.sidebar h5 {
+    color: #fff;
+    margin-bottom: 12px;
+}
+.sidebar ul {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+.sidebar li {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #1f2937;
+    background: #111827;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.sidebar .doc-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+.sidebar .doc-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+.sidebar .doc-actions {
+    flex-shrink: 0;
+}
+.sidebar .upload-form {
+    margin-top: 16px;
+}
+.sidebar .upload-hint {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-top: 6px;
+}
+.sidebar .upload-input {
+    background: #0b1220;
+    border-color: #1f2937;
+    color: #e2e8f0;
+}
+.sidebar li .using {
+    color: #10b981;
+    font-size: 12px;
+}
+.config-card {
+    margin-top: 18px;
+}
+.config-card label {
+    font-size: 0.85rem;
+    color: #cbd5f5;
+}
+.config-card .form-control,
+.config-card .form-select {
+    background: #0b1220;
+    border-color: #1f2937;
+    color: #e2e8f0;
+}
+.config-card .form-text {
+    color: #94a3b8;
+}
+.config-card .help-panel {
+    background: #0b1220;
+    border: 1px solid #1f2937;
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 0.85rem;
+    color: #cbd5f5;
+}
+.history-item {
+    border-left: 4px solid #0ea5e9;
+    padding-left: 15px;
+    margin-bottom: 15px;
+}
+.user-question {
+    background-color: #0b1220;
+    padding: 12px;
+    border-radius: 8px;
+}
+.bot-answer {
+    background-color: #0b1220;
+    padding: 12px;
+    border-radius: 8px;
+    border-left: 3px solid #6c757d;
+}
+.answer-content {
+    margin-top: 10px;
+    display: grid;
+    gap: 10px;
+}
+.answer-text {
+    margin: 0;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+.answer-content pre {
+    background: #0b1020;
+    border: 1px solid #1f2937;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 0;
+    overflow-x: auto;
+    position: relative;
+}
+.answer-content pre[data-lang]::before {
+    content: attr(data-lang);
+    position: absolute;
+    top: 6px;
+    right: 10px;
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+.answer-content code {
+    font-family: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+    font-size: 0.88rem;
+    color: #e2e8f0;
+}
+.form-control,
+.form-select {
+    background: #0b1220;
+    border-color: #1f2937;
+    color: #e2e8f0;
+}
+.form-text {
+    color: #94a3b8;
+}
