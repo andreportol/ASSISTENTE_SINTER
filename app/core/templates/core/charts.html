@@ -19,7 +19,7 @@ Gráficos (sem IA)
         <h4 class="mb-3"><i class="fas fa-sliders-h me-2"></i>Gerar gráfico</h4>
         <form method="post" class="row g-3">
             {% csrf_token %}
-            <div class="col-md-6">
+            <div class="col-12 col-md-4">
                 <label class="form-label">Tabela</label>
                 <select class="form-select" name="table" id="table-select">
                     <option value="">Selecione...</option>
@@ -28,14 +28,31 @@ Gráficos (sem IA)
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-6">
+            <div class="col-12 col-md-4">
                 <label class="form-label">Eixo X (categoria)</label>
-                <select class="form-select" name="label_col" id="label-select">
-                    <option value="">Selecione...</option>
-                    {% for col in columns %}
-                        <option value="{{ col }}" {% if col == selected_label %}selected{% endif %}>{{ col }}</option>
+                <div class="typeahead-wrapper">
+                    <input
+                        type="text"
+                        class="form-control"
+                        name="label_col"
+                        id="label-col-input"
+                        data-source="label-columns"
+                        placeholder="Selecione ou digite..."
+                        autocomplete="off"
+                        value="{{ selected_label }}"
+                    >
+                    <div class="typeahead-results d-none" id="label-col-results"></div>
+                </div>
+            </div>
+            <div class="col-12 col-md-4">
+                <label class="form-label">Valor do eixo X (opcional)</label>
+                <select class="form-select" name="label_value" id="label-value-select">
+                    <option value="">Todos</option>
+                    {% for value in label_values %}
+                        <option value="{{ value }}" {% if value == selected_label_value %}selected{% endif %}>{{ value }}</option>
                     {% endfor %}
                 </select>
+                <div class="form-text">Filtra apenas um registro da coluna do eixo X.</div>
             </div>
             <div class="col-md-4">
                 <label class="form-label">Agregação</label>
@@ -47,14 +64,113 @@ Gráficos (sem IA)
                 <div class="form-text">COUNT ignora a coluna numérica.</div>
             </div>
             <div class="col-md-4">
-                <label class="form-label">Coluna numérica</label>
-                <select class="form-select" name="value_col" id="value-select">
-                    <option value="">Selecione...</option>
-                    {% for col in columns %}
-                        <option value="{{ col }}" {% if col == selected_value %}selected{% endif %}>{{ col }}</option>
+                <label class="form-label">Coluna para agregação</label>
+                <div class="typeahead-wrapper">
+                    <input
+                        type="text"
+                        class="form-control"
+                        name="value_col"
+                        id="value-col-input"
+                        data-source="value-columns"
+                        placeholder="Selecione ou digite..."
+                        autocomplete="off"
+                        value="{{ selected_value }}"
+                    >
+                    <div class="typeahead-results d-none" id="value-col-results"></div>
+                </div>
+                <div class="form-text">Para COUNT, a coluna é opcional (usa COUNT(*)).</div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Valor do eixo Y (opcional)</label>
+                <select class="form-select" name="value_value" id="value-value-select">
+                    <option value="">Todos</option>
+                    {% for value in value_values %}
+                        <option value="{{ value }}" {% if value == selected_value_value %}selected{% endif %}>{{ value }}</option>
                     {% endfor %}
                 </select>
+                <div class="form-text">Filtra registros pela coluna selecionada.</div>
             </div>
+            <div class="col-12">
+                <label class="form-label">Filtros</label>
+                <div id="filter-list" class="d-grid gap-3">
+                    {% for row in filter_rows %}
+                        <div class="row g-3 align-items-end filter-row">
+                            <div class="col-12 col-md-2">
+                                <label class="form-label">Operador</label>
+                                <input type="hidden" name="filter_op" class="filter-op-value" value="{{ row.op }}">
+                                <div class="d-flex gap-2 filter-op-group {% if forloop.first %}opacity-50{% endif %}">
+                                    <div class="form-check form-check-inline">
+                                        <input
+                                            class="form-check-input filter-op-radio"
+                                            type="radio"
+                                            name="filter_op_ui_{{ forloop.counter0 }}"
+                                            id="filter-op-and-{{ forloop.counter0 }}"
+                                            value="and"
+                                            data-op="and"
+                                            {% if row.op == 'and' %}checked{% endif %}
+                                            {% if forloop.first %}disabled{% endif %}
+                                        >
+                                        <label class="form-check-label filter-op-label" data-op="and" for="filter-op-and-{{ forloop.counter0 }}">E</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input
+                                            class="form-check-input filter-op-radio"
+                                            type="radio"
+                                            name="filter_op_ui_{{ forloop.counter0 }}"
+                                            id="filter-op-or-{{ forloop.counter0 }}"
+                                            value="or"
+                                            data-op="or"
+                                            {% if row.op == 'or' %}checked{% endif %}
+                                            {% if forloop.first %}disabled{% endif %}
+                                        >
+                                        <label class="form-check-label filter-op-label" data-op="or" for="filter-op-or-{{ forloop.counter0 }}">OU</label>
+                                    </div>
+                                </div>
+                                {% if forloop.first %}
+                                    <div class="form-text">Primeiro filtro.</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label">Filtro (coluna)</label>
+                                <div class="typeahead-wrapper">
+                                    <input
+                                        type="text"
+                                        class="form-control filter-col-input"
+                                        name="filter_col"
+                                        data-source="filter-columns"
+                                        placeholder="Selecione ou digite..."
+                                        autocomplete="off"
+                                        value="{{ row.col }}"
+                                    >
+                                    <div class="typeahead-results d-none filter-col-results"></div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label">Valor do filtro</label>
+                                <select class="form-select filter-value-select" name="filter_value">
+                                    <option value="">Todos</option>
+                                    {% for value in row.values %}
+                                        <option value="{{ value }}" {% if value == row.value %}selected{% endif %}>{{ value }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-2 d-flex">
+                                <button
+                                    type="button"
+                                    class="btn btn-outline-secondary btn-remove-filter mt-auto"
+                                    {% if filter_rows|length == 1 %}disabled{% endif %}
+                                >
+                                    Remover filtro
+                                </button>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+                <button type="button" class="btn btn-outline-primary btn-sm mt-3" id="add-filter">
+                    <i class="fas fa-plus me-1"></i>Adicionar filtro
+                </button>
+            </div>
+            <div class="w-100 d-none d-md-block"></div>
             <div class="col-md-4">
                 <label class="form-label">Tipo de gráfico</label>
                 <select class="form-select" name="chart_type">
@@ -90,16 +206,20 @@ Gráficos (sem IA)
     {% endif %}
 
     {% if chart_data %}
-        <div class="document-container mt-3">
+        <div class="document-container chart-card chart-card--compact mt-3">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>{{ chart_data.title }}</h5>
-                <small class="text-muted">Dados retornados da consulta.</small>
+                <small class="text-white">Dados retornados da consulta.</small>
             </div>
-            <canvas id="result-chart" height="240"></canvas>
+            <canvas id="result-chart" height="280"></canvas>
         </div>
         {{ chart_data|json_script:"chart-data" }}
     {% endif %}
 </div>
+{{ columns|json_script:"label-columns" }}
+{{ numeric_columns|json_script:"value-columns" }}
+{{ columns|json_script:"filter-columns" }}
+{{ columns|json_script:"all-columns" }}
 {% endblock %}
 
 {% block extra_scripts %}

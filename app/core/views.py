@@ -1,5 +1,6 @@
 import os
 import re
+import unicodedata
 from pathlib import Path
 
 from django.conf import settings
@@ -12,9 +13,11 @@ from .langchain_agents import answer_question, reset_rules_retriever_cache
 from .rag_index import ingest_docs_to_faiss, rebuild_faiss_index
 
 SQL_BLOCK_RE = re.compile(r"```sql\s*(.*?)```", re.IGNORECASE | re.DOTALL)
-CHART_LIST_RE = re.compile(r"^\s*\d+\.\s*(.+?):\s*([0-9\.,]+)", re.MULTILINE)
+CHART_LIST_RE = re.compile(r"^\s*(?:[-*]\s*|\d+\.\s*)?(.+?):\s*([0-9][0-9\.,]*)\s*$", re.MULTILINE)
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+NUMERIC_AGG_RE = re.compile(r"\b(sum|avg)\s*\(\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*\)", re.IGNORECASE)
 MAX_CHART_ROWS = 200  # evita carregar milhões de linhas no gráfico
+MAX_FILTER_VALUES = 200  # evita carregar muitos valores distintos para filtros
 ALLOWED_DOC_EXTS = {".pdf", ".txt"}
 DEFAULT_LLM_CONFIG = {
     "model": getattr(settings, "OPENAI_MODEL", "gpt-4o-mini"),
@@ -42,16 +45,69 @@ def _detect_chart_type(query: str, response_text: str) -> str:
     return "bar"
 
 
+def _normalize_text(text: str) -> str:
+    cleaned = unicodedata.normalize("NFKD", text or "")
+    cleaned = cleaned.encode("ascii", "ignore").decode("ascii")
+    cleaned = re.sub(r"[^\w\s]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip().lower()
+    return cleaned
+
+
+def _normalize_identifier(text: str) -> str:
+    cleaned = unicodedata.normalize("NFKD", text or "")
+    cleaned = cleaned.encode("ascii", "ignore").decode("ascii")
+    cleaned = re.sub(r"[^A-Za-z0-9_]", "", cleaned)
+    return cleaned.lower()
+
+
+def _rewrite_numeric_agg(sql: str) -> str | None:
+    if not sql:
+        return None
+
+    def _repl(match: re.Match) -> str:
+        func = match.group(1).upper()
+        col = match.group(2)
+        return f"{func}(CAST({col} AS NUMERIC))"
+
+    rewritten = NUMERIC_AGG_RE.sub(_repl, sql)
+    if rewritten == sql:
+        return None
+    return rewritten
+
+
+def _build_agg_expression(agg: str, value_col: str | None) -> str:
+    if agg == "count":
+        if value_col:
+            return f"COUNT({value_col})"
+        return "COUNT(*)"
+    if not value_col:
+        raise ValueError("Coluna numerica obrigatoria para SUM ou AVG.")
+    return f"{agg.upper()}(CAST({value_col} AS NUMERIC))"
+
+
 def _build_chart_data(sql: str, chart_type: str = "bar") -> dict | None:
     # Garante apenas SELECT simples
     sql_clean = sql.strip().rstrip(";")
     if not sql_clean.lower().startswith("select"):
         raise ValueError("Somente SELECT é permitido para gerar gráficos.")
 
-    with connections["default"].cursor() as cursor:
-        cursor.execute(sql_clean)
-        rows = cursor.fetchmany(MAX_CHART_ROWS + 1)
-        cols = [col[0] for col in (cursor.description or [])]
+    def _run_query(stmt: str) -> tuple[list[tuple], list[str]]:
+        with connections["default"].cursor() as cursor:
+            cursor.execute(stmt)
+            fetched = cursor.fetchmany(MAX_CHART_ROWS + 1)
+            columns = [col[0] for col in (cursor.description or [])]
+        return fetched, columns
+
+    try:
+        rows, cols = _run_query(sql_clean)
+    except Exception as exc:  # noqa: BLE001
+        fallback_sql = _rewrite_numeric_agg(sql_clean)
+        if not fallback_sql:
+            raise
+        try:
+            rows, cols = _run_query(fallback_sql)
+        except Exception:
+            raise exc
 
     if not rows or len(cols) < 2:
         return None
@@ -178,6 +234,57 @@ def _get_table_columns(table_name: str) -> list[str]:
     return [col.name for col in description]
 
 
+def _get_numeric_columns(table_name: str) -> list[str]:
+    if not _is_valid_identifier(table_name):
+        return []
+    conn = connections["default"]
+    if conn.vendor == "postgresql":
+        numeric_types = {
+            "smallint",
+            "integer",
+            "bigint",
+            "decimal",
+            "numeric",
+            "real",
+            "double precision",
+            "smallserial",
+            "serial",
+            "bigserial",
+            "money",
+        }
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = %s
+                """,
+                [table_name],
+            )
+            rows = cursor.fetchall()
+        return [row[0] for row in rows if row[1] in numeric_types]
+    return _get_table_columns(table_name)
+
+
+def _get_distinct_values(table_name: str, column_name: str, limit: int = MAX_FILTER_VALUES) -> list[str]:
+    if not _is_valid_identifier(table_name) or not _is_valid_identifier(column_name):
+        return []
+    if table_name not in _get_authorized_tables():
+        return []
+    if column_name not in _get_table_columns(table_name):
+        return []
+
+    sql = (
+        f"SELECT DISTINCT {column_name} FROM {table_name} "
+        f"WHERE {column_name} IS NOT NULL ORDER BY {column_name} ASC LIMIT %s"
+    )
+    with connections["default"].cursor() as cursor:
+        cursor.execute(sql, [limit])
+        rows = cursor.fetchall()
+    return [str(row[0]) for row in rows if row and row[0] is not None]
+
+
 def _get_authorized_tables() -> list[str]:
     conn = connections["default"]
     if conn.vendor == "postgresql":
@@ -195,6 +302,80 @@ def _get_authorized_tables() -> list[str]:
     return conn.introspection.table_names()
 
 
+def _match_identifier(candidate: str, available: list[str]) -> str | None:
+    norm = _normalize_identifier(candidate)
+    if not norm:
+        return None
+    for item in available:
+        if _normalize_identifier(item) == norm and _is_valid_identifier(item):
+            return item
+    return None
+
+
+def _looks_like_chart_request(query: str) -> bool:
+    text = _normalize_text(query)
+    if not text:
+        return False
+    return any(token in text for token in ("grafico", "chart", "barra", "barras", "linha", "line", "pizza", "pie"))
+
+
+def _build_chart_from_query(query: str) -> dict | None:
+    text = _normalize_text(query)
+    if not text:
+        return None
+
+    agg = None
+    if any(token in text for token in ("media", "avg")):
+        agg = "avg"
+    elif any(token in text for token in ("soma", "somatorio", "sum")):
+        agg = "sum"
+    elif any(token in text for token in ("contagem", "count", "quantidade", "total")):
+        agg = "count"
+
+    if not agg:
+        return None
+
+    table_match = re.search(r"\b(?:tabela|table)\s+([a-z0-9_]+)", text)
+    table_raw = table_match.group(1) if table_match else ""
+    if not table_raw:
+        return None
+
+    tables = _get_authorized_tables()
+    table = _match_identifier(table_raw, tables)
+    if not table:
+        return None
+
+    columns = _get_table_columns(table)
+    label_match = re.search(
+        r"\bpor\s+(.+?)(?:\s+(?:da|na)\s+tabela\b|\s+tabela\b|$)",
+        text,
+    )
+    label_raw = (label_match.group(1) if label_match else "").strip()
+    label_col = _match_identifier(label_raw, columns) if label_raw else None
+    if not label_col:
+        return None
+
+    value_col = None
+    if agg != "count":
+        value_match = re.search(
+            r"\b(?:soma|somatorio|sum|media|avg)\s+(?:d[aeo]s?\s+)?(.+?)(?:\s+por\b|$)",
+            text,
+        )
+        value_raw = (value_match.group(1) if value_match else "").strip()
+        value_col = _match_identifier(value_raw, columns) if value_raw else None
+        if not value_col:
+            return None
+
+    select_expr = _build_agg_expression(agg, value_col)
+
+    sql = (
+        f"SELECT {label_col} AS label, {select_expr} AS value "
+        f"FROM {table} GROUP BY {label_col} ORDER BY value DESC LIMIT {MAX_CHART_ROWS}"
+    )
+    chart_type = _detect_chart_type(query, "")
+    return _build_chart_data(sql, chart_type=chart_type)
+
+
 @ensure_csrf_cookie
 def index(request):
     response_text = None
@@ -204,6 +385,7 @@ def index(request):
     chart_data = None
     chart_error = None
     query = ""
+    query_raw = ""
     docs_dir = Path(getattr(settings, "RAG_DOCS_DIR", settings.BASE_DIR / "documents"))
     docs_dir.mkdir(parents=True, exist_ok=True)
     llm_config = _load_llm_config(request)
@@ -213,6 +395,7 @@ def index(request):
     if request.method == "POST":
         action = request.POST.get("action", "ask")
         query = (request.POST.get("query") or "").strip()
+        query_raw = query
         if action == "clear":
             history = []
             request.session["chat_history"] = history
@@ -340,6 +523,14 @@ def index(request):
                             chart_error = f"Erro ao gerar gráfico: {chart_exc}"
                     if not chart_data:
                         chart_data = _extract_chart_from_text(response_text)
+                    if not chart_data and _looks_like_chart_request(query_raw):
+                        try:
+                            chart_data = _build_chart_from_query(query_raw)
+                            if chart_data:
+                                chart_error = None
+                        except Exception as chart_exc:  # noqa: BLE001
+                            if not chart_error:
+                                chart_error = f"Erro ao gerar gráfico: {chart_exc}"
                 except Exception as exc:  # noqa: BLE001
                     error_message = str(exc)
             query = ""
@@ -387,7 +578,12 @@ def charts(request):
     tables = _get_authorized_tables()
     table = (request.POST.get("table") or request.GET.get("table") or "").strip()
     label_col = (request.POST.get("label_col") or "").strip()
+    label_value = (request.POST.get("label_value") or "").strip()
     value_col = (request.POST.get("value_col") or "").strip()
+    value_value = (request.POST.get("value_value") or "").strip()
+    filter_cols = [val.strip() for val in request.POST.getlist("filter_col")]
+    filter_values = [val.strip() for val in request.POST.getlist("filter_value")]
+    filter_ops = [val.strip().lower() for val in request.POST.getlist("filter_op")]
     agg = (request.POST.get("agg") or "count").strip().lower()
     chart_type = (request.POST.get("chart_type") or "bar").strip().lower()
     limit_raw = request.POST.get("limit") or "20"
@@ -399,6 +595,21 @@ def charts(request):
 
     limit = max(1, min(limit, 200))
     columns = _get_table_columns(table) if table else []
+    numeric_columns = _get_numeric_columns(table) if table else []
+    label_values = _get_distinct_values(table, label_col) if table and label_col else []
+    value_values = _get_distinct_values(table, value_col) if table and value_col else []
+    max_filters = max(len(filter_cols), len(filter_values), len(filter_ops), 1)
+    filter_rows = []
+    for idx in range(max_filters):
+        col = filter_cols[idx] if idx < len(filter_cols) else ""
+        val = filter_values[idx] if idx < len(filter_values) else ""
+        op = filter_ops[idx] if idx < len(filter_ops) else "and"
+        if op not in {"and", "or"}:
+            op = "and"
+        if idx == 0:
+            op = "and"
+        values = _get_distinct_values(table, col) if table and col else []
+        filter_rows.append({"col": col, "value": val, "values": values, "op": op})
 
     if request.method == "POST" and request.POST.get("action") == "generate_chart":
         if not _is_valid_identifier(table) or table not in tables:
@@ -407,21 +618,84 @@ def charts(request):
             error_message = "Selecione uma coluna válida para o eixo X."
         elif agg not in {"count", "sum", "avg"}:
             error_message = "Selecione uma agregação válida."
+        elif agg == "count" and value_col and (not _is_valid_identifier(value_col) or value_col not in columns):
+            error_message = "Selecione uma coluna válida para COUNT."
         elif agg != "count" and not _is_valid_identifier(value_col):
-            error_message = "Selecione uma coluna numérica para agregação."
+            error_message = "Selecione uma coluna numérica válida para agregação."
+        elif agg != "count" and numeric_columns and value_col not in numeric_columns:
+            error_message = "Selecione uma coluna numérica válida para agregação."
         else:
-            if agg == "count":
-                select_expr = "COUNT(*)"
-            else:
-                select_expr = f"{agg.upper()}({value_col})"
+            filter_error = None
+            for row in filter_rows:
+                col = row["col"]
+                val = row["value"]
+                if not col and not val:
+                    continue
+                if not col:
+                    filter_error = "Selecione uma coluna válida para o filtro."
+                    break
+                if not _is_valid_identifier(col) or col not in columns:
+                    filter_error = "Selecione uma coluna válida para o filtro."
+                    break
+            if filter_error:
+                error_message = filter_error
+                return render(
+                    request,
+                    "core/charts.html",
+                    {
+                        "tables": tables,
+                        "columns": columns,
+                        "selected_table": table,
+                        "selected_label": label_col,
+                        "selected_label_value": label_value,
+                        "selected_value": value_col,
+                        "selected_value_value": value_value,
+                        "selected_agg": agg,
+                        "selected_chart_type": chart_type,
+                        "selected_limit": limit,
+                        "label_values": label_values,
+                        "value_values": value_values,
+                        "filter_rows": filter_rows,
+                        "numeric_columns": numeric_columns,
+                        "chart_data": chart_data,
+                        "chart_error": chart_error,
+                        "error_message": error_message,
+                    },
+                )
+            select_expr = _build_agg_expression(agg, value_col)
 
-            sql = (
-                f"SELECT {label_col} AS label, {select_expr} AS value "
-                f"FROM {table} GROUP BY {label_col} ORDER BY value DESC LIMIT {limit}"
-            )
+            sql = f"SELECT {label_col} AS label, {select_expr} AS value FROM {table}"
+            params: list[str] = []
+            where_clauses = []
+            if label_value:
+                where_clauses.append(f"{label_col} = %s")
+                params.append(label_value)
+            if value_value and _is_valid_identifier(value_col):
+                where_clauses.append(f"{value_col} = %s")
+                params.append(value_value)
+            filter_expr = ""
+            for row in filter_rows:
+                col = row["col"]
+                val = row["value"]
+                if not col or not val:
+                    continue
+                clause = f"{col} = %s"
+                if not filter_expr:
+                    filter_expr = clause
+                else:
+                    op = row.get("op", "and").upper()
+                    if op not in {"AND", "OR"}:
+                        op = "AND"
+                    filter_expr = f"{filter_expr} {op} {clause}"
+                params.append(val)
+            if filter_expr:
+                where_clauses.append(f"({filter_expr})")
+            if where_clauses:
+                sql += " WHERE " + " AND ".join(where_clauses)
+            sql += f" GROUP BY {label_col} ORDER BY value DESC LIMIT {limit}"
             try:
                 with connections["default"].cursor() as cursor:
-                    cursor.execute(sql)
+                    cursor.execute(sql, params)
                     rows = cursor.fetchall()
                 labels = [str(row[0]) for row in rows]
                 values = [float(row[1]) for row in rows]
@@ -444,10 +718,16 @@ def charts(request):
             "columns": columns,
             "selected_table": table,
             "selected_label": label_col,
+            "selected_label_value": label_value,
             "selected_value": value_col,
+            "selected_value_value": value_value,
             "selected_agg": agg,
             "selected_chart_type": chart_type,
             "selected_limit": limit,
+            "label_values": label_values,
+            "value_values": value_values,
+            "filter_rows": filter_rows,
+            "numeric_columns": numeric_columns,
             "chart_data": chart_data,
             "chart_error": chart_error,
             "error_message": error_message,

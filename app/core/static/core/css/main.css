@@ -15,6 +15,17 @@ body {
     padding: 20px;
     margin-bottom: 20px;
 }
+.chart-card {
+    width: 100%;
+}
+.chart-card--compact {
+    padding: 16px 18px;
+    min-height: 360px;
+}
+.chart-card--compact canvas {
+    max-height: 280px;
+    height: 280px;
+}
 .btn-custom {
     border-radius: 20px;
     padding: 10px 22px;
@@ -161,6 +172,44 @@ body {
     border-color: #1f2937;
     color: #e2e8f0;
 }
+.form-control:disabled,
+.form-select:disabled {
+    background: #111827;
+    color: #94a3b8;
+    cursor: not-allowed;
+}
 .form-text {
     color: #94a3b8;
+}
+.typeahead-wrapper {
+    position: relative;
+}
+.typeahead-results {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    max-height: 220px;
+    overflow-y: auto;
+    background: #0b1220;
+    border: 1px solid #1f2937;
+    border-radius: 10px;
+    box-shadow: 0 12px 24px rgba(0,0,0,0.35);
+    z-index: 30;
+}
+.typeahead-results button {
+    width: 100%;
+    text-align: left;
+    padding: 8px 12px;
+    border: 0;
+    background: transparent;
+    color: #e2e8f0;
+}
+.typeahead-results button:hover,
+.typeahead-results button:focus {
+    background: rgba(14,165,233,0.12);
+    color: #fff;
+}
+.filter-op-group .form-check-input:disabled {
+    cursor: not-allowed;
 }

@@ -1,29 +1,306 @@
 (function() {
     const tableSelect = document.getElementById('table-select');
-    if (tableSelect) {
-        tableSelect.addEventListener('change', function() {
-            if (tableSelect.value) {
-                const form = tableSelect.closest('form');
-                if (form) {
-                    form.submit();
+    const labelValueSelect = document.getElementById('label-value-select');
+    const valueValueSelect = document.getElementById('value-value-select');
+    const filterList = document.getElementById('filter-list');
+    const addFilterBtn = document.getElementById('add-filter');
+    const sourceCache = {};
+
+    const submitForm = (el) => {
+        const form = el ? el.closest('form') : null;
+        if (form) {
+            form.submit();
+        }
+    };
+
+    const getSourceValues = (input) => {
+        if (!input) return [];
+        const sourceId = input.dataset.source;
+        if (!sourceId) return [];
+        if (sourceCache[sourceId]) return sourceCache[sourceId];
+        const sourceEl = document.getElementById(sourceId);
+        if (!sourceEl) return [];
+        try {
+            sourceCache[sourceId] = JSON.parse(sourceEl.textContent || '[]');
+        } catch (err) {
+            sourceCache[sourceId] = [];
+        }
+        return sourceCache[sourceId];
+    };
+
+    const bindTypeahead = (input, results, onCommit) => {
+        if (!input || !results) return;
+        const MAX_SUGGESTIONS = 25;
+
+        const showSuggestions = (items) => {
+            results.innerHTML = '';
+            if (!items.length) {
+                results.classList.add('d-none');
+                return;
+            }
+            items.forEach((value) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = value;
+                btn.addEventListener('click', () => {
+                    input.value = value;
+                    results.classList.add('d-none');
+                    if (onCommit) onCommit(input);
+                });
+                results.appendChild(btn);
+            });
+            results.classList.remove('d-none');
+        };
+
+        const filterSuggestions = () => {
+            const values = getSourceValues(input);
+            const term = input.value.trim().toLowerCase();
+            const filtered = values
+                .filter((value) => !term || String(value).toLowerCase().includes(term))
+                .slice(0, MAX_SUGGESTIONS);
+            showSuggestions(filtered);
+        };
+
+        input.addEventListener('input', filterSuggestions);
+        input.addEventListener('focus', filterSuggestions);
+        input.addEventListener('change', () => {
+            if (onCommit) onCommit(input);
+        });
+        input.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter') {
+                ev.preventDefault();
+                if (onCommit) onCommit(input);
+            }
+        });
+
+        document.addEventListener('click', (ev) => {
+            if (results.contains(ev.target) || input.contains(ev.target)) {
+                return;
+            }
+            results.classList.add('d-none');
+        });
+    };
+
+    const setupTypeahead = (inputId, resultsId, onCommit) => {
+        const input = document.getElementById(inputId);
+        const results = document.getElementById(resultsId);
+        if (!input || !results) return null;
+        bindTypeahead(input, results, onCommit);
+        return input;
+    };
+
+    const updateRemoveButtons = () => {
+        if (!filterList) return;
+        const rows = filterList.querySelectorAll('.filter-row');
+        rows.forEach((row) => {
+            const btn = row.querySelector('.btn-remove-filter');
+            if (btn) btn.disabled = rows.length <= 1;
+        });
+    };
+
+    const renumberFilterRows = () => {
+        if (!filterList) return;
+        const rows = filterList.querySelectorAll('.filter-row');
+        rows.forEach((row, idx) => {
+            const andRadio = row.querySelector('.filter-op-radio[data-op="and"]');
+            const orRadio = row.querySelector('.filter-op-radio[data-op="or"]');
+            const andLabel = row.querySelector('.filter-op-label[data-op="and"]');
+            const orLabel = row.querySelector('.filter-op-label[data-op="or"]');
+            const opHidden = row.querySelector('.filter-op-value');
+
+            if (andRadio && orRadio) {
+                andRadio.name = `filter_op_ui_${idx}`;
+                orRadio.name = `filter_op_ui_${idx}`;
+                andRadio.id = `filter-op-and-${idx}`;
+                orRadio.id = `filter-op-or-${idx}`;
+                andRadio.disabled = idx === 0;
+                orRadio.disabled = idx === 0;
+                if (idx === 0 && !andRadio.checked && !orRadio.checked) {
+                    andRadio.checked = true;
+                }
+                if (opHidden && idx === 0) {
+                    opHidden.value = 'and';
                 }
             }
+            if (andLabel && andRadio) {
+                andLabel.setAttribute('for', andRadio.id);
+            }
+            if (orLabel && orRadio) {
+                orLabel.setAttribute('for', orRadio.id);
+            }
+        });
+    };
+
+    const initFilterRow = (row) => {
+        if (!row) return;
+        const input = row.querySelector('.filter-col-input');
+        const results = row.querySelector('.filter-col-results');
+        const valueSelect = row.querySelector('.filter-value-select');
+        const removeBtn = row.querySelector('.btn-remove-filter');
+        const opHidden = row.querySelector('.filter-op-value');
+        const opRadios = row.querySelectorAll('.filter-op-radio');
+
+        if (input && results) {
+            bindTypeahead(input, results, () => {
+                if (valueSelect) valueSelect.value = '';
+                submitForm(input);
+            });
+        }
+
+        if (input) {
+            input.addEventListener('change', () => {
+                if (valueSelect) valueSelect.value = '';
+                submitForm(input);
+            });
+        }
+
+        if (opHidden && opRadios.length) {
+            opRadios.forEach((radio) => {
+                radio.addEventListener('change', () => {
+                    if (radio.checked) {
+                        opHidden.value = radio.value;
+                    }
+                });
+            });
+        }
+
+        if (removeBtn) {
+            removeBtn.addEventListener('click', () => {
+                row.remove();
+                renumberFilterRows();
+                updateRemoveButtons();
+            });
+        }
+    };
+
+    const labelInput = setupTypeahead('label-col-input', 'label-col-results', () => {
+        if (labelValueSelect) labelValueSelect.value = '';
+        submitForm(labelInput);
+    });
+
+    const valueInput = setupTypeahead('value-col-input', 'value-col-results', () => {
+        if (valueValueSelect) valueValueSelect.value = '';
+        submitForm(valueInput);
+    });
+
+    if (filterList) {
+        filterList.querySelectorAll('.filter-row').forEach((row) => initFilterRow(row));
+        renumberFilterRows();
+        updateRemoveButtons();
+    }
+
+    if (addFilterBtn && filterList) {
+        addFilterBtn.addEventListener('click', () => {
+            const rows = filterList.querySelectorAll('.filter-row');
+            if (!rows.length) return;
+            const template = rows[rows.length - 1];
+            const clone = template.cloneNode(true);
+            const input = clone.querySelector('.filter-col-input');
+            const results = clone.querySelector('.filter-col-results');
+            const select = clone.querySelector('.filter-value-select');
+            const opHidden = clone.querySelector('.filter-op-value');
+            const opRadios = clone.querySelectorAll('.filter-op-radio');
+            if (input) input.value = '';
+            if (results) {
+                results.innerHTML = '';
+                results.classList.add('d-none');
+            }
+            if (select) {
+                select.value = '';
+                while (select.options.length > 1) {
+                    select.remove(1);
+                }
+            }
+            if (opHidden) opHidden.value = 'and';
+            if (opRadios.length) {
+                opRadios.forEach((radio) => {
+                    radio.checked = radio.value === 'and';
+                });
+            }
+            filterList.appendChild(clone);
+            initFilterRow(clone);
+            renumberFilterRows();
+            updateRemoveButtons();
+        });
+    }
+
+    if (tableSelect) {
+        tableSelect.addEventListener('change', function() {
+            if (labelInput) labelInput.value = '';
+            if (valueInput) valueInput.value = '';
+            if (labelValueSelect) labelValueSelect.value = '';
+            if (valueValueSelect) valueValueSelect.value = '';
+
+            if (filterList) {
+                const rows = filterList.querySelectorAll('.filter-row');
+                rows.forEach((row, idx) => {
+                    if (idx > 0) {
+                        row.remove();
+                        return;
+                    }
+                    const input = row.querySelector('.filter-col-input');
+                    const results = row.querySelector('.filter-col-results');
+                    const select = row.querySelector('.filter-value-select');
+                    const opHidden = row.querySelector('.filter-op-value');
+                    const opRadios = row.querySelectorAll('.filter-op-radio');
+                    if (input) input.value = '';
+                    if (results) {
+                        results.innerHTML = '';
+                        results.classList.add('d-none');
+                    }
+                    if (select) {
+                        select.value = '';
+                        while (select.options.length > 1) {
+                            select.remove(1);
+                        }
+                    }
+                    if (opHidden) opHidden.value = 'and';
+                    if (opRadios.length) {
+                        opRadios.forEach((radio) => {
+                            radio.checked = radio.value === 'and';
+                        });
+                    }
+                });
+                renumberFilterRows();
+                updateRemoveButtons();
+            }
+            submitForm(tableSelect);
         });
     }
 })();
 
 (function() {
     const aggSelect = document.getElementById('agg-select');
-    const valueSelect = document.getElementById('value-select');
-    if (!aggSelect || !valueSelect) return;
+    const valueInput = document.getElementById('value-col-input');
+    const valueValueSelect = document.getElementById('value-value-select');
+    if (!aggSelect || !valueInput) return;
     const toggleValue = () => {
         const isCount = aggSelect.value === 'count';
-        valueSelect.disabled = isCount;
+        valueInput.disabled = false;
+        valueInput.dataset.source = isCount ? 'all-columns' : 'value-columns';
+        valueInput.placeholder = isCount ? 'Coluna para COUNT (opcional)' : 'Selecione ou digite...';
+        if (!isCount && valueInput.value) {
+            const numericValues = getSourceValues(valueInput);
+            if (!numericValues.includes(valueInput.value)) {
+                valueInput.value = '';
+            }
+        }
+        if (valueValueSelect) {
+            valueValueSelect.disabled = !valueInput.value;
+        }
         if (isCount) {
-            valueSelect.value = '';
+            if (valueValueSelect) {
+                valueValueSelect.value = '';
+            }
         }
     };
     aggSelect.addEventListener('change', toggleValue);
+    if (valueValueSelect) {
+        valueInput.addEventListener('change', () => {
+            valueValueSelect.value = '';
+        });
+    }
+    valueInput.addEventListener('input', toggleValue);
     toggleValue();
 })();
 
@@ -57,6 +334,7 @@
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: { display: cfg.type !== 'bar', position: 'bottom' },
                 tooltip: { enabled: true }

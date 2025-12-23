@@ -259,6 +259,7 @@ def build_chart_agent():
         "Use 'consultar_regras' quando precisar de definições ou contexto de negócio. "
         "Sempre escreva consultas de leitura agregadas (COUNT, SUM, AVG etc.) com GROUP BY, "
         "sem SELECT *, e inclua LIMIT 200 ou menos para evitar carregar grandes volumes. "
+        "Inclua a consulta principal em um bloco ```sql``` para permitir a renderizacao do grafico. "
         "Responda em passos curtos: objetivo, consultas SQL sugeridas (apenas leitura), "
         "campos para eixo/legenda, tipo de gráfico recomendado e anotações de uso."
     )
