@@ -344,3 +344,13 @@ body {
 .filter-op-group .form-check-input:disabled {
     cursor: not-allowed;
 }
+.btn-remove-filter.btn-outline-secondary {
+    color: #e2e8f0;
+    border-color: #94a3b8;
+}
+.btn-remove-filter.btn-outline-secondary:hover,
+.btn-remove-filter.btn-outline-secondary:focus {
+    color: #fff;
+    background-color: rgba(148,163,184,0.2);
+    border-color: #cbd5f5;
+}

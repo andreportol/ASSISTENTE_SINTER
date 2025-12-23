@@ -4,9 +4,11 @@ Helpers to run LangChain agents against Postgres and a rules document (RAG).
 
 from __future__ import annotations
 
+import base64
+import io
 import json
 import os
-import uuid
+import time
 import warnings
 from functools import lru_cache
 from pathlib import Path
@@ -259,7 +261,8 @@ def build_chart_agent():
         "Use 'consultar_regras' quando precisar de definições ou contexto de negócio. "
         "Sempre escreva consultas de leitura agregadas (COUNT, SUM, AVG etc.) com GROUP BY, "
         "sem SELECT *, e inclua LIMIT 200 ou menos para evitar carregar grandes volumes. "
-        "Inclua a consulta principal em um bloco ```sql``` para permitir a renderizacao do grafico. "
+        "Inclua sempre a consulta principal em um bloco ```sql``` para permitir a renderizacao do grafico. "
+        "Nao responda sem esse bloco; se houver duvida, ainda assim proponha uma consulta tentativa. "
         "Responda em passos curtos: objetivo, consultas SQL sugeridas (apenas leitura), "
         "campos para eixo/legenda, tipo de gráfico recomendado e anotações de uso."
     )
@@ -290,12 +293,6 @@ def generate_charts(question: str, history: List[Tuple[str, str]] | None = None)
     return "Não foi possível sugerir gráficos com as fontes locais."
 
 
-def _get_charts_dir() -> Path:
-    charts_dir = Path(getattr(settings, "CHART_OUTPUT_DIR", Path(settings.BASE_DIR) / "documents" / "charts"))
-    charts_dir.mkdir(parents=True, exist_ok=True)
-    return charts_dir
-
-
 def _extract_series(data: list[dict[str, Any]], x_key: str, y_key: str) -> tuple[list[Any], list[float]]:
     x_vals: list[Any] = []
     y_vals: list[float] = []
@@ -314,6 +311,7 @@ def render_chart(chart_spec_json: str) -> str:
     """
     Renderiza um gráfico com matplotlib a partir de uma especificação JSON.
     Campos esperados: chart_type, data, x, y, title (opcional), group_by (opcional), output_format (opcional).
+    Retorna a imagem em base64 e não salva arquivos em disco.
     """
     try:
         spec = json.loads(chart_spec_json)
@@ -381,18 +379,95 @@ def render_chart(chart_spec_json: str) -> str:
         if group_by:
             ax.legend(title=str(group_by))
 
-    charts_dir = _get_charts_dir()
-    file_name = f"{chart_type}_{uuid.uuid4().hex[:8]}.{output_format}"
-    file_path = charts_dir / file_name
     fig.tight_layout()
-    fig.savefig(file_path, format=output_format, bbox_inches="tight")
+    buffer = io.BytesIO()
+    fig.savefig(buffer, format=output_format, bbox_inches="tight")
     plt.close(fig)
 
     return json.dumps(
         {
-            "file_path": str(file_path),
+            "image_base64": base64.b64encode(buffer.getvalue()).decode("ascii"),
             "chart_type": chart_type,
             "rows_used": len(data),
+            "output_format": output_format,
+        },
+        ensure_ascii=False,
+    )
+
+
+def render_pdf_report(report_spec_json: str) -> str:
+    """
+    Gera um relatorio PDF a partir de dados prontos.
+    Campos esperados: title (opcional), columns (opcional), rows (lista de objetos ou listas).
+    Retorna a imagem PDF em base64 e nao salva arquivos em disco.
+    """
+    try:
+        spec = json.loads(report_spec_json)
+    except json.JSONDecodeError as exc:  # noqa: BLE001
+        raise ValueError("Especificacao invalida: envie um JSON valido.") from exc
+
+    title = spec.get("title") or "Relatorio"
+    columns = spec.get("columns") or []
+    rows = spec.get("rows") or []
+    if not isinstance(rows, list):
+        raise ValueError("rows deve ser uma lista.")
+
+    if rows and isinstance(rows[0], dict) and not columns:
+        columns = list(rows[0].keys())
+    if not columns:
+        columns = ["dados"]
+
+    max_rows = 200
+    truncated = len(rows) > max_rows
+    if truncated:
+        rows = rows[:max_rows]
+
+    table_rows: list[list[str]] = []
+    if rows and isinstance(rows[0], dict):
+        for row in rows:
+            table_rows.append([str(row.get(col, "")) for col in columns])
+    elif rows:
+        for row in rows:
+            if isinstance(row, (list, tuple)):
+                table_rows.append([str(val) for val in row])
+            else:
+                table_rows.append([str(row)])
+    else:
+        table_rows = []
+
+    fig, ax = plt.subplots(figsize=(8.27, 11.69))
+    ax.axis("off")
+    ax.text(0.5, 0.97, title, ha="center", va="top", fontsize=14, fontweight="bold")
+
+    if table_rows:
+        table = ax.table(
+            cellText=table_rows,
+            colLabels=columns,
+            loc="upper center",
+            bbox=[0.05, 0.08, 0.9, 0.84],
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(8)
+        table.scale(1, 1.2)
+    else:
+        ax.text(0.5, 0.5, "Sem dados para o relatorio.", ha="center", va="center")
+
+    if truncated:
+        ax.text(0.5, 0.04, f"Dados truncados para {max_rows} linhas.", ha="center", va="bottom", fontsize=9)
+
+    buffer = io.BytesIO()
+    fig.tight_layout()
+    fig.savefig(buffer, format="pdf", bbox_inches="tight")
+    plt.close(fig)
+
+    file_name = f"relatorio_{int(time.time())}.pdf"
+    return json.dumps(
+        {
+            "pdf_base64": base64.b64encode(buffer.getvalue()).decode("ascii"),
+            "file_name": file_name,
+            "title": title,
+            "rows_used": len(table_rows),
+            "truncated": truncated,
         },
         ensure_ascii=False,
     )
@@ -411,7 +486,8 @@ def build_render_agent():
         description=(
             "Renderiza gráficos com matplotlib. Envie um JSON com: "
             "chart_type (line|bar|pie|area|scatter), data (lista de objetos), x, y, "
-            "title (opcional), group_by (opcional), output_format (png|svg)."
+            "title (opcional), group_by (opcional), output_format (png|svg). "
+            "Retorna a imagem em base64 (nao salva em disco)."
         ),
     )
 
@@ -426,6 +502,64 @@ def build_render_agent():
         tools=[render_tool],
         system_prompt=system_prompt,
     )
+
+
+def build_report_agent():
+    """
+    Agente responsavel por gerar relatorios em PDF com dados do banco.
+    """
+    llm = get_chat_llm()
+
+    db_tool = Tool(
+        name="consultar_banco",
+        func=ask_database,
+        description="Use para obter dados do Postgres antes de montar o relatorio.",
+    )
+    rules_tool = Tool(
+        name="consultar_regras",
+        func=ask_rules_document,
+        description="Use para entender regras ou contexto necessario ao relatorio.",
+    )
+    render_tool = Tool(
+        name="renderizar_relatorio_pdf",
+        func=render_pdf_report,
+        description=(
+            "Gera relatorio em PDF com base64. Envie JSON com: "
+            "title (opcional), columns (opcional), rows (lista de objetos ou listas)."
+        ),
+    )
+
+    system_prompt = (
+        "Voce gera relatorios PDF com dados reais. Sempre que precisar de dados, "
+        "use 'consultar_banco'. Ao final, chame 'renderizar_relatorio_pdf' com um JSON "
+        "contendo title, columns e rows. Limite o volume a no maximo 200 linhas. "
+        "Responda somente com o JSON retornado pela ferramenta, de preferencia em bloco ```json```."
+    )
+
+    return create_agent(
+        model=llm,
+        tools=[db_tool, rules_tool, render_tool],
+        system_prompt=system_prompt,
+    )
+
+
+def generate_pdf_report(question: str, history: List[Tuple[str, str]] | None = None) -> str:
+    print("[agent] gerador de relatorios PDF recebendo pergunta:", question)
+    agent = build_report_agent()
+    msgs = history[:] if history else []
+    msgs.append(("user", question))
+    result = agent.invoke({"messages": msgs})
+    if isinstance(result, dict) and "messages" in result:
+        messages = result.get("messages") or []
+        if messages:
+            final_msg = messages[-1]
+            try:
+                content = final_msg.content  # type: ignore[assignment]
+            except Exception:
+                content = str(final_msg)
+            if content:
+                return content
+    return "Nao foi possivel gerar o relatorio PDF."
 
 
 def render_chart_request(question: str, history: List[Tuple[str, str]] | None = None) -> str:
@@ -479,6 +613,11 @@ def build_manager_agent():
         func=render_chart_request,
         description="Use quando o usuário fornecer dados e pedir a renderização do gráfico.",
     )
+    report_tool = Tool(
+        name="gerar_relatorio_pdf",
+        func=generate_pdf_report,
+        description="Use para gerar relatorios em PDF com dados do Postgres.",
+    )
 
     system_prompt = (
         "Você é um agente autônomo que decide a melhor fonte de dados.\n"
@@ -486,13 +625,15 @@ def build_manager_agent():
         "- Use 'consultar_regras' para perguntas sobre regras, procedimentos ou texto do documento.\n"
         "- Use 'gerar_codigo' quando o usuário pedir código SQL ou Python.\n"
         "- Use 'gerar_graficos' quando o usuário pedir gráficos, dashboards ou visualizações.\n"
+        "- Para pedidos de grafico ou visualizacao, nunca responda direto: sempre use 'gerar_graficos'.\n"
+        "- Use 'gerar_relatorio_pdf' quando o usuario pedir relatorio ou formulario em PDF.\n"
         "- Use 'renderizar_grafico' quando receber dados prontos e precisar gerar a visualização.\n"
         "Responda apenas com base nas ferramentas locais; não use conhecimento externo."
     )
 
     return create_agent(
         model=llm,
-        tools=[db_tool, rules_tool, code_tool, chart_tool, render_tool],
+        tools=[db_tool, rules_tool, code_tool, chart_tool, render_tool, report_tool],
         system_prompt=system_prompt,
     )
 

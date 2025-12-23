@@ -150,7 +150,7 @@ Gráficos (sem IA)
                 <label class="form-label">Filtros</label>
                 <div id="filter-list" class="d-grid gap-3">
                     {% for row in filter_rows %}
-                        <div class="row g-3 align-items-end filter-row">
+                        <div class="row g-3 align-items-stretch filter-row">
                             <div class="col-12 col-md-2">
                                 <label class="form-label">Operador</label>
                                 <input type="hidden" name="filter_op" class="filter-op-value" value="{{ row.op }}">
@@ -203,17 +203,36 @@ Gráficos (sem IA)
                             </div>
                             <div class="col-12 col-md-4">
                                 <label class="form-label">Valor do filtro</label>
-                                <select class="form-select filter-value-select" name="filter_value">
-                                    <option value="">Todos</option>
-                                    {% for value in row.values %}
-                                        <option value="{{ value }}" {% if value == row.value %}selected{% endif %}>{{ value }}</option>
-                                    {% endfor %}
-                                </select>
+                                {% if row.allow_text %}
+                                    <input
+                                        type="text"
+                                        class="form-control filter-value-input"
+                                        name="filter_value"
+                                        list="filter-values-{{ forloop.counter0 }}"
+                                        placeholder="Digite o valor..."
+                                        autocomplete="off"
+                                        value="{{ row.value }}"
+                                    >
+                                    <datalist id="filter-values-{{ forloop.counter0 }}">
+                                        {% for value in row.values %}
+                                            <option value="{{ value }}"></option>
+                                        {% endfor %}
+                                    </datalist>
+                                    <div class="form-text text-warning">Muitos valores. Digite para filtrar.</div>
+                                {% else %}
+                                    <select class="form-select filter-value-select" name="filter_value">
+                                        <option value="">Todos</option>
+                                        {% for value in row.values %}
+                                            <option value="{{ value }}" {% if value == row.value %}selected{% endif %}>{{ value }}</option>
+                                        {% endfor %}
+                                    </select>
+                                {% endif %}
                             </div>
-                            <div class="col-12 col-md-2 d-flex">
+                            <div class="col-12 col-md-2 d-flex flex-column">
+                                <span class="form-label d-block invisible">Ação</span>
                                 <button
                                     type="button"
-                                    class="btn btn-outline-secondary btn-remove-filter mt-auto"
+                                    class="btn btn-outline-secondary btn-remove-filter"
                                     {% if filter_rows|length == 1 %}disabled{% endif %}
                                 >
                                     Remover filtro

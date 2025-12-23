@@ -87,6 +87,9 @@ CACHES = {
     }
 }
 
+# Cache da resposta do agente "Faça sua pergunta"
+ASK_CACHE_TIMEOUT = int(os.getenv("ASK_CACHE_TIMEOUT", "900"))
+
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases

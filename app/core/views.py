@@ -1,4 +1,6 @@
 import csv
+import hashlib
+import json
 import os
 import re
 import unicodedata
@@ -10,17 +12,25 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils.text import get_valid_filename
 from django.views.decorators.csrf import ensure_csrf_cookie
+from django.core.cache import cache
 
-from .langchain_agents import answer_question, reset_rules_retriever_cache
+from .langchain_agents import (
+    answer_question,
+    generate_pdf_report,
+    render_pdf_report,
+    reset_rules_retriever_cache,
+)
 from .rag_index import ingest_docs_to_faiss, rebuild_faiss_index
 
 SQL_BLOCK_RE = re.compile(r"```sql\s*(.*?)```", re.IGNORECASE | re.DOTALL)
 CHART_LIST_RE = re.compile(r"^\s*(?:[-*]\s*|\d+\.\s*)?(.+?):\s*([0-9][0-9\.,]*)\s*$", re.MULTILINE)
+PDF_BLOCK_RE = re.compile(r"```json\s*(\{.*?\"pdf_base64\".*?\})\s*```", re.IGNORECASE | re.DOTALL)
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 NUMERIC_AGG_RE = re.compile(r"\b(sum|avg)\s*\(\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*\)", re.IGNORECASE)
 MAX_CHART_ROWS = 200  # evita carregar milhões de linhas no gráfico
 TABLE_PAGE_SIZE = 20
 MAX_FILTER_VALUES = 200  # evita carregar muitos valores distintos para filtros
+MAX_PDF_ROWS = 200
 ALLOWED_DOC_EXTS = {".pdf", ".txt"}
 DEFAULT_LLM_CONFIG = {
     "model": getattr(settings, "OPENAI_MODEL", "gpt-4o-mini"),
@@ -61,6 +71,13 @@ def _normalize_identifier(text: str) -> str:
     cleaned = cleaned.encode("ascii", "ignore").decode("ascii")
     cleaned = re.sub(r"[^A-Za-z0-9_]", "", cleaned)
     return cleaned.lower()
+
+
+def _cache_key(prefix: str, query: str, session_key: str | None) -> str:
+    normalized = _normalize_text(query) or query.strip().lower()
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+    session_part = session_key or "anon"
+    return f"{prefix}:{session_part}:{digest}"
 
 
 def _rewrite_numeric_agg(sql: str) -> str | None:
@@ -295,21 +312,31 @@ def _get_numeric_columns(table_name: str) -> list[str]:
 
 
 def _get_distinct_values(table_name: str, column_name: str, limit: int = MAX_FILTER_VALUES) -> list[str]:
+    values, _ = _get_distinct_values_with_flag(table_name, column_name, limit)
+    return values
+
+
+def _get_distinct_values_with_flag(
+    table_name: str, column_name: str, limit: int = MAX_FILTER_VALUES
+) -> tuple[list[str], bool]:
     if not _is_valid_identifier(table_name) or not _is_valid_identifier(column_name):
-        return []
+        return [], False
     if table_name not in _get_authorized_tables():
-        return []
+        return [], False
     if column_name not in _get_table_columns(table_name):
-        return []
+        return [], False
 
     sql = (
         f"SELECT DISTINCT {column_name} FROM {table_name} "
         f"WHERE {column_name} IS NOT NULL ORDER BY {column_name} ASC LIMIT %s"
     )
     with connections["default"].cursor() as cursor:
-        cursor.execute(sql, [limit])
+        cursor.execute(sql, [limit + 1])
         rows = cursor.fetchall()
-    return [str(row[0]) for row in rows if row and row[0] is not None]
+    truncated = len(rows) > limit
+    if truncated:
+        rows = rows[:limit]
+    return [str(row[0]) for row in rows if row and row[0] is not None], truncated
 
 
 def _get_authorized_tables() -> list[str]:
@@ -344,6 +371,127 @@ def _looks_like_chart_request(query: str) -> bool:
     if not text:
         return False
     return any(token in text for token in ("grafico", "chart", "barra", "barras", "linha", "line", "pizza", "pie"))
+
+
+def _looks_like_pdf_request(query: str) -> bool:
+    text = _normalize_text(query)
+    if not text:
+        return False
+    return any(token in text for token in ("pdf", "relatorio", "formulario"))
+
+
+def _extract_pdf_payload(text: str) -> dict | None:
+    if not text:
+        return None
+    block_match = PDF_BLOCK_RE.search(text)
+    if block_match:
+        try:
+            return json.loads(block_match.group(1))
+        except json.JSONDecodeError:
+            pass
+    for match in re.finditer(r"\{.*?\"pdf_base64\".*?\}", text, re.DOTALL):
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _build_pdf_report_from_sql(sql: str, title: str | None = None) -> dict | None:
+    sql_clean = sql.strip().rstrip(";")
+    if not sql_clean.lower().startswith("select"):
+        raise ValueError("Somente SELECT é permitido para gerar PDF.")
+
+    with connections["default"].cursor() as cursor:
+        cursor.execute(sql_clean)
+        rows = cursor.fetchmany(MAX_PDF_ROWS + 1)
+        columns = [col[0] for col in (cursor.description or [])]
+
+    if not rows or not columns:
+        return None
+
+    truncated = len(rows) > MAX_PDF_ROWS
+    if truncated:
+        rows = rows[:MAX_PDF_ROWS]
+
+    spec = {
+        "title": title or "Relatorio PDF",
+        "columns": columns,
+        "rows": [list(row) for row in rows],
+    }
+    payload_text = render_pdf_report(json.dumps(spec, ensure_ascii=False))
+    payload = _extract_pdf_payload(payload_text)
+    if not payload or not payload.get("pdf_base64"):
+        return None
+    return {
+        "base64": payload.get("pdf_base64"),
+        "file_name": payload.get("file_name") or "relatorio.pdf",
+        "title": payload.get("title") or spec["title"],
+        "rows_used": payload.get("rows_used") or len(rows),
+        "truncated": bool(payload.get("truncated") or truncated),
+    }
+
+
+def _build_report_sql_from_query(query: str) -> tuple[str, str] | None:
+    text = _normalize_text(query)
+    if not text:
+        return None
+
+    agg = None
+    if any(token in text for token in ("soma", "somatorio", "sum")):
+        agg = "sum"
+    elif any(token in text for token in ("media", "avg")):
+        agg = "avg"
+    elif any(token in text for token in ("contagem", "count", "quantidade", "total")):
+        agg = "count"
+
+    if not agg:
+        return None
+
+    tables = _get_authorized_tables()
+    table = None
+    table_match = re.search(r"\b(?:tabela|table)\s+([a-z0-9_]+)", text)
+    if table_match:
+        table = _match_identifier(table_match.group(1), tables)
+    if not table and "imoveis" in tables:
+        table = "imoveis"
+    if not table and tables:
+        table = tables[0]
+    if not table:
+        return None
+
+    columns = _get_table_columns(table)
+    if not columns:
+        return None
+
+    label_raw = ""
+    label_match = re.search(r"\bpor\s+([a-z0-9_]+)\b", text)
+    if label_match:
+        label_raw = label_match.group(1)
+    label_col = _match_identifier(label_raw, columns) if label_raw else None
+
+    value_col = None
+    if agg != "count":
+        value_match = re.search(r"\b(?:soma|somatorio|sum|media|avg)\s+(?:d[aeo]s?\s+)?([a-z0-9_]+)\b", text)
+        value_raw = value_match.group(1) if value_match else ""
+        value_col = _match_identifier(value_raw, columns) if value_raw else None
+        if not value_col:
+            return None
+    else:
+        value_match = re.search(r"\b(?:quantidade|contagem|count|total)\s+(?:d[aeo]s?\s+)?([a-z0-9_]+)\b", text)
+        value_raw = value_match.group(1) if value_match else ""
+        value_col = _match_identifier(value_raw, columns) if value_raw else None
+
+    if not label_col:
+        return None
+
+    select_expr = _build_agg_expression(agg, value_col)
+    sql = (
+        f"SELECT {label_col} AS label, {select_expr} AS value "
+        f"FROM {table} GROUP BY {label_col} ORDER BY value DESC LIMIT {MAX_PDF_ROWS}"
+    )
+    title = f"Relatorio: {label_col} x {select_expr}"
+    return sql, title
 
 
 def _build_chart_from_query(query: str) -> dict | None:
@@ -403,6 +551,102 @@ def _build_chart_from_query(query: str) -> dict | None:
     return _build_chart_data(sql, chart_type=chart_type)
 
 
+def _build_chart_from_description(text: str) -> dict | None:
+    if not text:
+        return None
+    norm = _normalize_text(text)
+    if not norm:
+        return None
+
+    agg = None
+    if re.search(r"\b(soma|sum)\b", norm):
+        agg = "sum"
+    elif re.search(r"\b(media|avg)\b", norm):
+        agg = "avg"
+    elif re.search(r"\b(contagem|count|quantidade|total)\b", norm):
+        agg = "count"
+
+    if not agg:
+        return None
+
+    table_match = re.search(r"\btabela\s+([a-z0-9_]+)", norm)
+    table_raw = table_match.group(1) if table_match else ""
+    if not table_raw:
+        return None
+
+    tables = _get_authorized_tables()
+    table = _match_identifier(table_raw, tables)
+    if not table:
+        return None
+
+    columns = _get_table_columns(table)
+    if not columns:
+        return None
+
+    paren_candidates = [match.group(1).strip() for match in re.finditer(r"\(([^)]+)\)", text)]
+    value_candidate = None
+    label_candidate = None
+
+    if agg != "count":
+        value_match = re.search(r"(?:soma|sum|m[eé]dia|media|avg)[^()]*\(([^)]+)\)", text, re.IGNORECASE)
+        if value_match:
+            value_candidate = value_match.group(1).strip()
+
+    label_match = re.search(
+        r"(?:agrupad[oa]s?\s+por|por)\s+[^()]*\(([^)]+)\)",
+        text,
+        re.IGNORECASE,
+    )
+    if label_match:
+        label_candidate = label_match.group(1).strip()
+
+    if not label_candidate and paren_candidates:
+        if agg != "count" and len(paren_candidates) >= 2:
+            label_candidate = paren_candidates[-1]
+        else:
+            label_candidate = paren_candidates[0]
+
+    if not value_candidate and agg != "count" and paren_candidates:
+        value_candidate = paren_candidates[0]
+
+    label_col = _match_identifier(label_candidate or "", columns)
+    value_col = _match_identifier(value_candidate or "", columns) if agg != "count" else None
+
+    if not label_col:
+        label_match_norm = re.search(r"\bpor\s+([a-z0-9_]+)\b", norm)
+        label_raw = label_match_norm.group(1) if label_match_norm else ""
+        label_col = _match_identifier(label_raw, columns) if label_raw else None
+
+    if not label_col:
+        return None
+    if agg != "count" and not value_col:
+        return None
+
+    select_expr = _build_agg_expression(agg, value_col)
+    sql = (
+        f"SELECT {label_col} AS label, {select_expr} AS value "
+        f"FROM {table} GROUP BY {label_col} ORDER BY value DESC LIMIT {MAX_CHART_ROWS}"
+    )
+    chart_type = _detect_chart_type("", text)
+    return _build_chart_data(sql, chart_type=chart_type)
+
+
+def _build_chart_from_history(history: list[tuple[str, str]], skip_text: str) -> dict | None:
+    for role, content in reversed(history):
+        if role != "assistant" or not content or content == skip_text:
+            continue
+        chart_data = _extract_chart_from_text(content)
+        if chart_data:
+            return chart_data
+        try:
+            chart_data = _build_chart_from_description(content)
+        except Exception:
+            continue
+        if chart_data:
+            return chart_data
+    return None
+
+
 @ensure_csrf_cookie
 def index(request):
     response_text = None
@@ -411,6 +655,7 @@ def index(request):
     error_message = None
     chart_data = None
     chart_error = None
+    pdf_report = None
     query = ""
     query_raw = ""
     docs_dir = Path(getattr(settings, "RAG_DOCS_DIR", settings.BASE_DIR / "documents"))
@@ -432,6 +677,7 @@ def index(request):
             error_message = None
             chart_data = None
             chart_error = None
+            pdf_report = None
         elif action == "save_config":
             model = (request.POST.get("llm_model") or "").strip()
             temp_raw = request.POST.get("llm_temperature") or ""
@@ -533,31 +779,91 @@ def index(request):
         else:
             if query:
                 try:
-                    response_text = answer_question(query, history=history)
+                    cache_key = _cache_key("ask", query_raw, request.session.session_key)
+                    cached = cache.get(cache_key)
+                    if cached:
+                        response_text = cached.get("response_text")
+                        chart_data = cached.get("chart_data")
+                        chart_error = cached.get("chart_error")
+                        pdf_report = cached.get("pdf_report")
+                    else:
+                        if _looks_like_pdf_request(query_raw):
+                            pdf_response = generate_pdf_report(query, history=history)
+                            payload = _extract_pdf_payload(pdf_response)
+                            if payload and payload.get("pdf_base64"):
+                                pdf_report = {
+                                    "base64": payload.get("pdf_base64"),
+                                    "file_name": payload.get("file_name") or "relatorio.pdf",
+                                    "title": payload.get("title") or "Relatorio PDF",
+                                    "rows_used": payload.get("rows_used") or 0,
+                                    "truncated": bool(payload.get("truncated")),
+                                }
+                                response_text = "Relatorio PDF gerado."
+                            else:
+                                sql_block = _extract_sql_block(pdf_response)
+                                if sql_block:
+                                    pdf_report = _build_pdf_report_from_sql(sql_block)
+                                if not pdf_report:
+                                    fallback = _build_report_sql_from_query(query_raw)
+                                    if fallback:
+                                        sql_stmt, title = fallback
+                                        pdf_report = _build_pdf_report_from_sql(sql_stmt, title=title)
+                                if pdf_report:
+                                    response_text = "Relatorio PDF gerado."
+                                else:
+                                    response_text = pdf_response
+                        else:
+                            response_text = answer_question(query, history=history)
+
+                            # tenta gerar gráfico quando houver SQL sugerido
+                            sql_block = _extract_sql_block(response_text)
+                            if sql_block:
+                                try:
+                                    chart_type = _detect_chart_type(query, response_text)
+                                    chart_data = _build_chart_data(sql_block, chart_type=chart_type)
+                                except Exception as chart_exc:  # noqa: BLE001
+                                    chart_error = f"Erro ao gerar gráfico: {chart_exc}"
+                            if not chart_data:
+                                chart_data = _extract_chart_from_text(response_text)
+                            if not chart_data:
+                                try:
+                                    chart_data = _build_chart_from_description(response_text)
+                                except Exception as chart_exc:  # noqa: BLE001
+                                    if not chart_error:
+                                        chart_error = f"Erro ao gerar gráfico: {chart_exc}"
+                            if not chart_data and _looks_like_chart_request(query_raw):
+                                try:
+                                    chart_data = _build_chart_from_query(query_raw)
+                                    if chart_data:
+                                        chart_error = None
+                                except Exception as chart_exc:  # noqa: BLE001
+                                    if not chart_error:
+                                        chart_error = f"Erro ao gerar gráfico: {chart_exc}"
+                            if not chart_data and _looks_like_chart_request(query_raw):
+                                try:
+                                    chart_data = _build_chart_from_history(history, response_text)
+                                    if chart_data:
+                                        chart_error = None
+                                except Exception as chart_exc:  # noqa: BLE001
+                                    if not chart_error:
+                                        chart_error = f"Erro ao gerar gráfico: {chart_exc}"
+
+                        cache.set(
+                            cache_key,
+                            {
+                                "response_text": response_text,
+                                "chart_data": chart_data,
+                                "chart_error": chart_error,
+                                "pdf_report": pdf_report,
+                            },
+                            timeout=getattr(settings, "ASK_CACHE_TIMEOUT", 900),
+                        )
+
                     history.append(("user", query))
                     history.append(("assistant", response_text))
                     history = history[-12:]
                     request.session["chat_history"] = history
                     request.session.modified = True
-
-                    # tenta gerar gráfico quando houver SQL sugerido
-                    sql_block = _extract_sql_block(response_text)
-                    if sql_block:
-                        try:
-                            chart_type = _detect_chart_type(query, response_text)
-                            chart_data = _build_chart_data(sql_block, chart_type=chart_type)
-                        except Exception as chart_exc:  # noqa: BLE001
-                            chart_error = f"Erro ao gerar gráfico: {chart_exc}"
-                    if not chart_data:
-                        chart_data = _extract_chart_from_text(response_text)
-                    if not chart_data and _looks_like_chart_request(query_raw):
-                        try:
-                            chart_data = _build_chart_from_query(query_raw)
-                            if chart_data:
-                                chart_error = None
-                        except Exception as chart_exc:  # noqa: BLE001
-                            if not chart_error:
-                                chart_error = f"Erro ao gerar gráfico: {chart_exc}"
                 except Exception as exc:  # noqa: BLE001
                     error_message = str(exc)
             query = ""
@@ -591,6 +897,7 @@ def index(request):
             "history": display_history,
             "chart_data": chart_data,
             "chart_error": chart_error,
+            "pdf_report": pdf_report,
             "llm_config": llm_config,
         },
     )
@@ -650,8 +957,10 @@ def charts(request):
             op = "and"
         if idx == 0:
             op = "and"
-        values = _get_distinct_values(table, col) if table and col else []
-        filter_rows.append({"col": col, "value": val, "values": values, "op": op})
+        values, truncated = _get_distinct_values_with_flag(table, col) if table and col else ([], False)
+        filter_rows.append(
+            {"col": col, "value": val, "values": values, "op": op, "allow_text": truncated}
+        )
 
     table_headers: list[str] = []
     table_rows: list[list[str]] = []

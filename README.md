@@ -46,6 +46,9 @@ DB_NAME=db.sqlite3
 # DB_HOST=localhost
 # DB_PORT=5432
 
+# Cache de respostas do agente (em segundos)
+ASK_CACHE_TIMEOUT=900
+
 # RAG / documentos
 # Caminho direto para o arquivo de regras (PDF/TXT/MD)
 CORE_RULES_PATH=documents/ManualOperacional_v1.12.pdf

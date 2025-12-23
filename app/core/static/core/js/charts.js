@@ -129,6 +129,8 @@
             const andLabel = row.querySelector('.filter-op-label[data-op="and"]');
             const orLabel = row.querySelector('.filter-op-label[data-op="or"]');
             const opHidden = row.querySelector('.filter-op-value');
+            const valueInput = row.querySelector('.filter-value-input');
+            const valueList = row.querySelector('datalist');
 
             if (andRadio && orRadio) {
                 andRadio.name = `filter_op_ui_${idx}`;
@@ -150,6 +152,11 @@
             if (orLabel && orRadio) {
                 orLabel.setAttribute('for', orRadio.id);
             }
+            if (valueInput && valueList) {
+                const listId = `filter-values-${idx}`;
+                valueList.id = listId;
+                valueInput.setAttribute('list', listId);
+            }
         });
     };
 
@@ -158,6 +165,8 @@
         const input = row.querySelector('.filter-col-input');
         const results = row.querySelector('.filter-col-results');
         const valueSelect = row.querySelector('.filter-value-select');
+        const valueInput = row.querySelector('.filter-value-input');
+        const valueList = row.querySelector('datalist');
         const removeBtn = row.querySelector('.btn-remove-filter');
         const opHidden = row.querySelector('.filter-op-value');
         const opRadios = row.querySelectorAll('.filter-op-radio');
@@ -165,6 +174,8 @@
         if (input && results) {
             bindTypeahead(input, results, () => {
                 if (valueSelect) valueSelect.value = '';
+                if (valueInput) valueInput.value = '';
+                if (valueList) valueList.innerHTML = '';
                 submitForm(input, { resetPage: true });
             });
         }
@@ -172,6 +183,8 @@
         if (input) {
             input.addEventListener('change', () => {
                 if (valueSelect) valueSelect.value = '';
+                if (valueInput) valueInput.value = '';
+                if (valueList) valueList.innerHTML = '';
                 submitForm(input, { resetPage: true });
             });
         }
@@ -220,6 +233,8 @@
             const input = clone.querySelector('.filter-col-input');
             const results = clone.querySelector('.filter-col-results');
             const select = clone.querySelector('.filter-value-select');
+            const valueInput = clone.querySelector('.filter-value-input');
+            const valueList = clone.querySelector('datalist');
             const opHidden = clone.querySelector('.filter-op-value');
             const opRadios = clone.querySelectorAll('.filter-op-radio');
             if (input) input.value = '';
@@ -233,6 +248,8 @@
                     select.remove(1);
                 }
             }
+            if (valueInput) valueInput.value = '';
+            if (valueList) valueList.innerHTML = '';
             if (opHidden) opHidden.value = 'and';
             if (opRadios.length) {
                 opRadios.forEach((radio) => {
@@ -263,6 +280,8 @@
                     const input = row.querySelector('.filter-col-input');
                     const results = row.querySelector('.filter-col-results');
                     const select = row.querySelector('.filter-value-select');
+                    const valueInput = row.querySelector('.filter-value-input');
+                    const valueList = row.querySelector('datalist');
                     const opHidden = row.querySelector('.filter-op-value');
                     const opRadios = row.querySelectorAll('.filter-op-radio');
                     if (input) input.value = '';
@@ -276,6 +295,8 @@
                             select.remove(1);
                         }
                     }
+                    if (valueInput) valueInput.value = '';
+                    if (valueList) valueList.innerHTML = '';
                     if (opHidden) opHidden.value = 'and';
                     if (opRadios.length) {
                         opRadios.forEach((radio) => {
