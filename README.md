@@ -71,6 +71,13 @@ python manage.py runserver
 ```
 Abra http://127.0.0.1:8000 e faça perguntas. A barra lateral mostra as fontes carregadas; o histórico fica na coluna principal.
 
+## Graficos (sem IA)
+Abra http://127.0.0.1:8000/charts/ para gerar graficos diretamente do banco.
+- Selecione tabela, eixo X (categoria) e agregacao (COUNT, SUM, AVG).
+- Para COUNT, a coluna de agregacao e opcional (usa COUNT(*)). Para SUM/AVG, a coluna deve ser numerica.
+- Use o bloco de filtros para aplicar varias condicoes com operador AND/OR.
+- Ao escolher um eixo/filtro, o sistema carrega os valores distintos para facilitar a selecao.
+
 ## Uso dos agentes
 - **RAG (documento de regras):** usa o arquivo indicado em `CORE_RULES_PATH` ou o primeiro válido em `CORE_RULES_DIR`.
 - **SQL (Postgres):** requer DB_* configurados com engine Postgres; se o engine não for Postgres, o agente SQL é desabilitado.

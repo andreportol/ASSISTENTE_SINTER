@@ -210,6 +210,54 @@ body {
     background: rgba(14,165,233,0.12);
     color: #fff;
 }
+.view-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(148,163,184,0.18);
+    background: linear-gradient(135deg, rgba(15,23,42,0.95), rgba(2,6,23,0.9));
+    box-shadow: 0 10px 24px rgba(2,6,23,0.45), inset 0 0 0 1px rgba(14,165,233,0.08);
+}
+.view-toggle__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    color: #cbd5f5;
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+}
+.view-toggle__chip.is-active {
+    color: #f8fafc;
+    background: linear-gradient(135deg, rgba(14,165,233,0.35), rgba(14,165,233,0.08));
+    border-color: rgba(56,189,248,0.4);
+    box-shadow: 0 10px 18px rgba(14,165,233,0.2);
+}
+.view-toggle .form-check-input {
+    width: 48px;
+    height: 24px;
+    background-color: rgba(15,23,42,0.9);
+    border-color: rgba(148,163,184,0.25);
+}
+.view-toggle .form-check-input:checked {
+    background-color: #0ea5e9;
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 4px rgba(56,189,248,0.25);
+}
+.view-toggle .form-check-input:focus {
+    box-shadow: 0 0 0 4px rgba(56,189,248,0.2);
+}
+.table-primary {
+    --bs-table-bg: rgba(59,130,246,0.15);
+    --bs-table-striped-bg: rgba(59,130,246,0.08);
+    --bs-table-striped-color: #e2e8f0;
+    --bs-table-color: #e2e8f0;
+    border-color: rgba(148,163,184,0.2);
+}
 .filter-op-group .form-check-input:disabled {
     cursor: not-allowed;
 }

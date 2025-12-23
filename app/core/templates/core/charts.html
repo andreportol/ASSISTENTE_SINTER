@@ -17,8 +17,11 @@ Gráficos (sem IA)
 <div class="container">
     <div class="document-container">
         <h4 class="mb-3"><i class="fas fa-sliders-h me-2"></i>Gerar gráfico</h4>
-        <form method="post" class="row g-3">
+        <form method="post" class="row g-3" id="chart-form">
             {% csrf_token %}
+            <input type="hidden" name="view_mode" id="view-mode-input" value="{{ view_mode|default:'chart' }}">
+            <input type="hidden" name="page" id="page-input" value="{{ page|default:1 }}">
+            <input type="hidden" name="action" id="action-input" value="generate_chart">
             <div class="col-12 col-md-4">
                 <label class="form-label">Tabela</label>
                 <select class="form-select" name="table" id="table-select">
@@ -181,11 +184,29 @@ Gráficos (sem IA)
             </div>
             <div class="col-md-3">
                 <label class="form-label">Limite</label>
-                <input type="number" class="form-control" name="limit" value="{{ selected_limit }}" min="1" max="200">
+                <input type="number" class="form-control" name="limit" id="limit-input" value="{{ selected_limit }}" min="1" max="200">
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">Visualização</label>
+                <div class="view-toggle" id="view-toggle">
+                    <div class="view-toggle__chip" data-mode="chart">
+                        <i class="fas fa-chart-column me-1"></i>Gráfico
+                    </div>
+                    <div class="form-check form-switch m-0">
+                        <input class="form-check-input" type="checkbox" role="switch" id="view-mode-switch" {% if view_mode != 'table' %}checked{% endif %}>
+                        <label class="form-check-label" for="view-mode-switch">
+                            <span class="visually-hidden">Alternar visualização</span>
+                        </label>
+                    </div>
+                    <div class="view-toggle__chip" data-mode="table">
+                        <i class="fas fa-table me-1"></i>Tabela
+                    </div>
+                </div>
             </div>
             <div class="col-12 d-flex gap-2">
-                <button class="btn btn-primary btn-custom" type="submit" name="action" value="generate_chart">
-                    <i class="fas fa-chart-bar me-1"></i>Gerar gráfico
+                <button class="btn btn-primary btn-custom" type="submit" name="action" value="generate_chart" id="generate-btn">
+                    <i class="fas {% if view_mode == 'table' %}fa-table{% else %}fa-chart-bar{% endif %} me-1" id="generate-icon"></i>
+                    <span id="generate-label">{% if view_mode == 'table' %}Gerar tabela{% else %}Gerar gráfico{% endif %}</span>
                 </button>
             </div>
         </form>
@@ -205,15 +226,71 @@ Gráficos (sem IA)
         </div>
     {% endif %}
 
-    {% if chart_data %}
-        <div class="document-container chart-card chart-card--compact mt-3">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>{{ chart_data.title }}</h5>
-                <small class="text-white">Dados retornados da consulta.</small>
+    {% if chart_data or table_rows %}
+        {% if view_mode == 'table' %}
+            <div class="document-container chart-card chart-card--compact mt-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0"><i class="fas fa-table me-2"></i>Resultado da consulta</h5>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-light btn-sm download-csv" type="button" data-action="download_csv">
+                            <i class="fas fa-download me-1"></i>Baixar CSV
+                        </button>
+                    </div>
+                </div>
+                {% if table_rows %}
+                    <div class="table-responsive">
+                        <table class="table table-primary table-striped align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    {% for header in table_headers %}
+                                        <th scope="col">{{ header }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in table_rows %}
+                                    <tr>
+                                        <td>{{ row.label }}</td>
+                                        <td>{{ row.value }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% if total_pages > 1 %}
+                        <div class="d-flex justify-content-between align-items-center mt-3">
+                            <small class="text-muted">Página {{ page }} de {{ total_pages }} ({{ total_rows }} registros)</small>
+                            <div class="btn-group">
+                                <button class="btn btn-outline-secondary btn-sm js-page-btn" type="button" data-page="{{ page|add:'-1' }}" {% if page <= 1 %}disabled{% endif %}>Anterior</button>
+                                <button class="btn btn-outline-secondary btn-sm js-page-btn" type="button" data-page="{{ page|add:'1' }}" {% if page >= total_pages %}disabled{% endif %}>Próxima</button>
+                            </div>
+                        </div>
+                    {% endif %}
+                {% else %}
+                    <div class="alert alert-secondary mb-0">Nenhum dado encontrado para a consulta.</div>
+                {% endif %}
             </div>
-            <canvas id="result-chart" height="280"></canvas>
-        </div>
-        {{ chart_data|json_script:"chart-data" }}
+        {% else %}
+            {% if chart_data %}
+                <div class="document-container chart-card chart-card--compact mt-3">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>{{ chart_data.title }}</h5>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-outline-light btn-sm download-csv" type="button" data-action="download_csv">
+                                <i class="fas fa-download me-1"></i>Baixar CSV
+                            </button>
+                            <button class="btn btn-outline-light btn-sm" type="button" id="download-chart">
+                                <i class="fas fa-image me-1"></i>Baixar PNG
+                            </button>
+                        </div>
+                    </div>
+                    <canvas id="result-chart" height="280"></canvas>
+                </div>
+                {{ chart_data|json_script:"chart-data" }}
+            {% else %}
+                <div class="alert alert-secondary">Nenhum dado encontrado para a consulta.</div>
+            {% endif %}
+        {% endif %}
     {% endif %}
 </div>
 {{ columns|json_script:"label-columns" }}

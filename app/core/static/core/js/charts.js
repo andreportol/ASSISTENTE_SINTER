@@ -2,15 +2,32 @@
     const tableSelect = document.getElementById('table-select');
     const labelValueSelect = document.getElementById('label-value-select');
     const valueValueSelect = document.getElementById('value-value-select');
+    const viewModeSwitch = document.getElementById('view-mode-switch');
+    const viewModeInput = document.getElementById('view-mode-input');
+    const viewToggle = document.getElementById('view-toggle');
+    const generateLabel = document.getElementById('generate-label');
+    const generateIcon = document.getElementById('generate-icon');
+    const actionInput = document.getElementById('action-input');
+    const pageInput = document.getElementById('page-input');
+    const limitInput = document.getElementById('limit-input');
     const filterList = document.getElementById('filter-list');
     const addFilterBtn = document.getElementById('add-filter');
     const sourceCache = {};
 
-    const submitForm = (el) => {
-        const form = el ? el.closest('form') : null;
-        if (form) {
-            form.submit();
+    const submitForm = (el, opts = {}) => {
+        const form = (el && el.closest('form')) || document.getElementById('chart-form');
+        if (!form) return;
+        if (actionInput) {
+            actionInput.value = opts.action || 'generate_chart';
         }
+        if (pageInput) {
+            if (opts.page) {
+                pageInput.value = String(opts.page);
+            } else if (opts.resetPage) {
+                pageInput.value = '1';
+            }
+        }
+        form.submit();
     };
 
     const getSourceValues = (input) => {
@@ -143,14 +160,14 @@
         if (input && results) {
             bindTypeahead(input, results, () => {
                 if (valueSelect) valueSelect.value = '';
-                submitForm(input);
+                submitForm(input, { resetPage: true });
             });
         }
 
         if (input) {
             input.addEventListener('change', () => {
                 if (valueSelect) valueSelect.value = '';
-                submitForm(input);
+                submitForm(input, { resetPage: true });
             });
         }
 
@@ -175,12 +192,12 @@
 
     const labelInput = setupTypeahead('label-col-input', 'label-col-results', () => {
         if (labelValueSelect) labelValueSelect.value = '';
-        submitForm(labelInput);
+        submitForm(labelInput, { resetPage: true });
     });
 
     const valueInput = setupTypeahead('value-col-input', 'value-col-results', () => {
         if (valueValueSelect) valueValueSelect.value = '';
-        submitForm(valueInput);
+        submitForm(valueInput, { resetPage: true });
     });
 
     if (filterList) {
@@ -264,9 +281,51 @@
                 renumberFilterRows();
                 updateRemoveButtons();
             }
-            submitForm(tableSelect);
+            submitForm(tableSelect, { resetPage: true });
         });
     }
+
+    if (viewModeSwitch && viewModeInput) {
+        const syncViewMode = () => {
+            const isChart = viewModeSwitch.checked;
+            viewModeInput.value = isChart ? 'chart' : 'table';
+            if (viewToggle) {
+                viewToggle.querySelectorAll('.view-toggle__chip').forEach((chip) => {
+                    const mode = chip.dataset.mode;
+                    chip.classList.toggle('is-active', mode === (isChart ? 'chart' : 'table'));
+                });
+            }
+            if (generateLabel) {
+                generateLabel.textContent = isChart ? 'Gerar gráfico' : 'Gerar tabela';
+            }
+            if (generateIcon) {
+                generateIcon.className = isChart ? 'fas fa-chart-bar me-1' : 'fas fa-table me-1';
+            }
+            if (limitInput) {
+                limitInput.disabled = !isChart;
+            }
+        };
+        syncViewMode();
+        viewModeSwitch.addEventListener('change', () => {
+            syncViewMode();
+            submitForm(viewModeSwitch, { resetPage: true });
+        });
+    }
+
+    document.querySelectorAll('.download-csv').forEach((btn) => {
+        btn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            submitForm(btn, { action: 'download_csv' });
+        });
+    });
+
+    document.querySelectorAll('.js-page-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const page = btn.dataset.page;
+            if (!page) return;
+            submitForm(btn, { page });
+        });
+    });
 })();
 
 (function() {
@@ -274,6 +333,17 @@
     const valueInput = document.getElementById('value-col-input');
     const valueValueSelect = document.getElementById('value-value-select');
     if (!aggSelect || !valueInput) return;
+    const getSourceValues = (input) => {
+        const sourceId = input.dataset.source;
+        if (!sourceId) return [];
+        const sourceEl = document.getElementById(sourceId);
+        if (!sourceEl) return [];
+        try {
+            return JSON.parse(sourceEl.textContent || '[]');
+        } catch (err) {
+            return [];
+        }
+    };
     const toggleValue = () => {
         const isCount = aggSelect.value === 'count';
         valueInput.disabled = false;
@@ -345,4 +415,14 @@
             }
         }
     });
+
+    const downloadBtn = document.getElementById('download-chart');
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.href = chartCanvas.toDataURL('image/png');
+            link.download = `grafico_${Date.now()}.png`;
+            link.click();
+        });
+    }
 })();

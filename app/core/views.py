@@ -1,3 +1,4 @@
+import csv
 import os
 import re
 import unicodedata
@@ -5,6 +6,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.db import connections
+from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils.text import get_valid_filename
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -17,6 +19,7 @@ CHART_LIST_RE = re.compile(r"^\s*(?:[-*]\s*|\d+\.\s*)?(.+?):\s*([0-9][0-9\.,]*)\
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 NUMERIC_AGG_RE = re.compile(r"\b(sum|avg)\s*\(\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*\)", re.IGNORECASE)
 MAX_CHART_ROWS = 200  # evita carregar milhões de linhas no gráfico
+TABLE_PAGE_SIZE = 20
 MAX_FILTER_VALUES = 200  # evita carregar muitos valores distintos para filtros
 ALLOWED_DOC_EXTS = {".pdf", ".txt"}
 DEFAULT_LLM_CONFIG = {
@@ -137,6 +140,30 @@ def _build_chart_data(sql: str, chart_type: str = "bar") -> dict | None:
         "title": f"Gráfico: {cols[0]} x {cols[1]}",
         "truncated": truncated,
         "max_rows": MAX_CHART_ROWS,
+    }
+
+
+def _build_chart_data_from_rows(rows: list[tuple], cols: list[str], chart_type: str) -> dict | None:
+    if not rows or len(cols) < 2:
+        return None
+    labels: list[str] = []
+    values: list[float] = []
+    for row in rows:
+        try:
+            value = float(row[1])
+        except Exception:
+            continue
+        labels.append(str(row[0]))
+        values.append(value)
+    if not values:
+        return None
+    return {
+        "labels": labels,
+        "values": values,
+        "type": chart_type,
+        "title": f"Gráfico: {cols[0]} x {cols[1]}",
+        "truncated": False,
+        "max_rows": len(values),
     }
 
 
@@ -586,12 +613,23 @@ def charts(request):
     filter_ops = [val.strip().lower() for val in request.POST.getlist("filter_op")]
     agg = (request.POST.get("agg") or "count").strip().lower()
     chart_type = (request.POST.get("chart_type") or "bar").strip().lower()
+    view_mode = (request.POST.get("view_mode") or request.GET.get("view_mode") or "chart").strip().lower()
     limit_raw = request.POST.get("limit") or "20"
+    page_raw = request.POST.get("page") or request.GET.get("page") or "1"
+
+    if view_mode not in {"chart", "table"}:
+        view_mode = "chart"
 
     try:
         limit = int(limit_raw)
     except ValueError:
         limit = 20
+
+    try:
+        page = int(page_raw)
+    except ValueError:
+        page = 1
+    page = max(1, page)
 
     limit = max(1, min(limit, 200))
     columns = _get_table_columns(table) if table else []
@@ -611,7 +649,13 @@ def charts(request):
         values = _get_distinct_values(table, col) if table and col else []
         filter_rows.append({"col": col, "value": val, "values": values, "op": op})
 
-    if request.method == "POST" and request.POST.get("action") == "generate_chart":
+    table_headers: list[str] = []
+    table_rows: list[dict[str, str]] = []
+    total_rows = 0
+    total_pages = 1
+
+    action = request.POST.get("action") or ""
+    if request.method == "POST" and action in {"generate_chart", "download_csv"}:
         if not _is_valid_identifier(table) or table not in tables:
             error_message = "Selecione uma tabela válida."
         elif not _is_valid_identifier(label_col):
@@ -653,18 +697,24 @@ def charts(request):
                         "selected_agg": agg,
                         "selected_chart_type": chart_type,
                         "selected_limit": limit,
+                        "view_mode": view_mode,
+                        "page": page,
+                        "total_pages": total_pages,
+                        "total_rows": total_rows,
                         "label_values": label_values,
                         "value_values": value_values,
                         "filter_rows": filter_rows,
                         "numeric_columns": numeric_columns,
                         "chart_data": chart_data,
+                        "table_headers": table_headers,
+                        "table_rows": table_rows,
                         "chart_error": chart_error,
                         "error_message": error_message,
                     },
                 )
             select_expr = _build_agg_expression(agg, value_col)
 
-            sql = f"SELECT {label_col} AS label, {select_expr} AS value FROM {table}"
+            base_sql = f"SELECT {label_col} AS label, {select_expr} AS value FROM {table}"
             params: list[str] = []
             where_clauses = []
             if label_value:
@@ -691,22 +741,60 @@ def charts(request):
             if filter_expr:
                 where_clauses.append(f"({filter_expr})")
             if where_clauses:
-                sql += " WHERE " + " AND ".join(where_clauses)
-            sql += f" GROUP BY {label_col} ORDER BY value DESC LIMIT {limit}"
+                base_sql += " WHERE " + " AND ".join(where_clauses)
+            base_sql += f" GROUP BY {label_col}"
+            order_sql = f"{base_sql} ORDER BY value DESC"
             try:
+                value_header = f"{agg.upper()}({value_col})" if value_col else f"{agg.upper()}(*)"
+                table_headers = [label_col, value_header]
                 with connections["default"].cursor() as cursor:
-                    cursor.execute(sql, params)
-                    rows = cursor.fetchall()
-                labels = [str(row[0]) for row in rows]
-                values = [float(row[1]) for row in rows]
-                chart_data = {
-                    "labels": labels,
-                    "values": values,
-                    "type": chart_type,
-                    "title": f"{agg.upper()} por {label_col}",
-                    "truncated": False,
-                    "max_rows": limit,
-                }
+                    if view_mode == "table":
+                        if action == "download_csv":
+                            cursor.execute(order_sql, params)
+                            rows = cursor.fetchall()
+                            response = HttpResponse(content_type="text/csv")
+                            filename = get_valid_filename(f"{table}_{label_col}_{agg}.csv") or "dados.csv"
+                            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+                            writer = csv.writer(response)
+                            writer.writerow(table_headers)
+                            for row in rows:
+                                writer.writerow([row[0], row[1]])
+                            return response
+
+                        count_sql = f"SELECT COUNT(*) FROM ({base_sql}) AS subquery"
+                        cursor.execute(count_sql, params)
+                        total_rows = int(cursor.fetchone()[0] or 0)
+                        total_pages = max(1, (total_rows + TABLE_PAGE_SIZE - 1) // TABLE_PAGE_SIZE)
+                        page = min(page, total_pages)
+                        offset = (page - 1) * TABLE_PAGE_SIZE
+                        cursor.execute(f"{order_sql} LIMIT %s OFFSET %s", params + [TABLE_PAGE_SIZE, offset])
+                        rows = cursor.fetchall()
+                        table_rows = [
+                            {"label": str(row[0]), "value": str(row[1])} for row in rows
+                        ]
+                    else:
+                        cursor.execute(f"{order_sql} LIMIT %s", params + [limit])
+                        rows = cursor.fetchall()
+                        cols = [col[0] for col in (cursor.description or [])]
+                        chart_data = _build_chart_data_from_rows(rows, cols, chart_type)
+                        if chart_data:
+                            chart_data["title"] = f"{agg.upper()} por {label_col}"
+
+                        table_rows = [
+                            {"label": str(row[0]), "value": str(row[1])} for row in rows
+                        ]
+                        total_rows = len(table_rows)
+                        total_pages = 1
+
+                        if action == "download_csv":
+                            response = HttpResponse(content_type="text/csv")
+                            filename = get_valid_filename(f"{table}_{label_col}_{agg}.csv") or "dados.csv"
+                            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+                            writer = csv.writer(response)
+                            writer.writerow(table_headers)
+                            for row in rows:
+                                writer.writerow([row[0], row[1]])
+                            return response
             except Exception as exc:  # noqa: BLE001
                 chart_error = f"Erro ao gerar gráfico: {exc}"
 
@@ -724,11 +812,17 @@ def charts(request):
             "selected_agg": agg,
             "selected_chart_type": chart_type,
             "selected_limit": limit,
+            "view_mode": view_mode,
+            "page": page,
+            "total_pages": total_pages,
+            "total_rows": total_rows,
             "label_values": label_values,
             "value_values": value_values,
             "filter_rows": filter_rows,
             "numeric_columns": numeric_columns,
             "chart_data": chart_data,
+            "table_headers": table_headers,
+            "table_rows": table_rows,
             "chart_error": chart_error,
             "error_message": error_message,
         },
