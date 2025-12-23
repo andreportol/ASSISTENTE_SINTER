@@ -14,14 +14,38 @@ Gráficos (sem IA)
 {% endblock %}
 
 {% block body %}
-<div class="container">
-    <div class="document-container">
+<div class="container-fluid px-0">
+    <div class="row g-4 mx-0">
+        <div class="col-12 col-lg-3 ps-0">
+            <div class="sidebar">
+                <h5 class="d-flex align-items-center mb-3">
+                    <i class="fas fa-layer-group me-2 text-info"></i>Visualização
+                </h5>
+                <div class="view-toggle js-view-toggle mb-3">
+                    <div class="view-toggle__chip" data-mode="chart">
+                        <i class="fas fa-chart-column me-1"></i>Gráfico
+                    </div>
+                    <div class="form-check form-switch m-0">
+                        <input class="form-check-input js-view-mode-switch" type="checkbox" role="switch" id="view-mode-switch-side" {% if view_mode != 'table' %}checked{% endif %}>
+                        <label class="form-check-label" for="view-mode-switch-side">
+                            <span class="visually-hidden">Alternar visualização</span>
+                        </label>
+                    </div>
+                    <div class="view-toggle__chip" data-mode="table">
+                        <i class="fas fa-table me-1"></i>Tabela
+                    </div>
+                </div>
+                <p class="text-white small mb-0">Alterne entre gráfico e tabela para desbloquear as opções específicas.</p>
+            </div>
+        </div>
+        <div class="col-12 col-lg-8">
+            <div class="document-container panel-sidebar">
         <h4 class="mb-3"><i class="fas fa-sliders-h me-2"></i>Gerar gráfico</h4>
         <form method="post" class="row g-3" id="chart-form">
             {% csrf_token %}
             <input type="hidden" name="view_mode" id="view-mode-input" value="{{ view_mode|default:'chart' }}">
             <input type="hidden" name="page" id="page-input" value="{{ page|default:1 }}">
-            <input type="hidden" name="action" id="action-input" value="generate_chart">
+            <input type="hidden" name="action" id="action-input" value="refresh">
             <div class="col-12 col-md-4">
                 <label class="form-label">Tabela</label>
                 <select class="form-select" name="table" id="table-select">
@@ -31,7 +55,7 @@ Gráficos (sem IA)
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-4" data-view="chart">
                 <label class="form-label">Eixo X (categoria)</label>
                 <div class="typeahead-wrapper">
                     <input
@@ -47,7 +71,7 @@ Gráficos (sem IA)
                     <div class="typeahead-results d-none" id="label-col-results"></div>
                 </div>
             </div>
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-4" data-view="chart">
                 <label class="form-label">Valor do eixo X (opcional)</label>
                 <select class="form-select" name="label_value" id="label-value-select">
                     <option value="">Todos</option>
@@ -57,7 +81,7 @@ Gráficos (sem IA)
                 </select>
                 <div class="form-text">Filtra apenas um registro da coluna do eixo X.</div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-4" data-view="chart">
                 <label class="form-label">Agregação</label>
                 <select class="form-select" name="agg" id="agg-select">
                     <option value="count" {% if selected_agg == 'count' %}selected{% endif %}>COUNT</option>
@@ -66,7 +90,7 @@ Gráficos (sem IA)
                 </select>
                 <div class="form-text">COUNT ignora a coluna numérica.</div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-4" data-view="chart">
                 <label class="form-label">Coluna para agregação</label>
                 <div class="typeahead-wrapper">
                     <input
@@ -83,7 +107,7 @@ Gráficos (sem IA)
                 </div>
                 <div class="form-text">Para COUNT, a coluna é opcional (usa COUNT(*)).</div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-4" data-view="chart">
                 <label class="form-label">Valor do eixo Y (opcional)</label>
                 <select class="form-select" name="value_value" id="value-value-select">
                     <option value="">Todos</option>
@@ -92,6 +116,34 @@ Gráficos (sem IA)
                     {% endfor %}
                 </select>
                 <div class="form-text">Filtra registros pela coluna selecionada.</div>
+            </div>
+            <div class="col-12 col-md-6" data-view="table">
+                <label class="form-label">Colunas da tabela</label>
+                <input
+                    type="text"
+                    class="form-control mb-2"
+                    id="table-cols-filter"
+                    placeholder="Filtrar colunas..."
+                    autocomplete="off"
+                >
+                <div class="d-flex gap-2 mb-2 table-cols-actions">
+                    <button type="button" class="btn btn-outline-light btn-sm" id="table-cols-select-all">Selecionar tudo</button>
+                    <button type="button" class="btn btn-outline-light btn-sm" id="table-cols-clear">Limpar</button>
+                </div>
+                <div class="table-cols-list" id="table-cols-list">
+                    {% for col in columns %}
+                        <label class="table-cols-item" data-col="{{ col|lower }}">
+                            <input
+                                type="checkbox"
+                                name="table_cols"
+                                value="{{ col }}"
+                                {% if col in selected_table_cols %}checked{% endif %}
+                            >
+                            <span>{{ col }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+                <div class="form-text">Selecione uma ou mais colunas para a tabela.</div>
             </div>
             <div class="col-12">
                 <label class="form-label">Filtros</label>
@@ -173,8 +225,8 @@ Gráficos (sem IA)
                     <i class="fas fa-plus me-1"></i>Adicionar filtro
                 </button>
             </div>
-            <div class="w-100 d-none d-md-block"></div>
-            <div class="col-md-4">
+            <div class="w-100 d-none d-md-block" data-view="chart"></div>
+            <div class="col-md-4" data-view="chart">
                 <label class="form-label">Tipo de gráfico</label>
                 <select class="form-select" name="chart_type">
                     <option value="bar" {% if selected_chart_type == 'bar' %}selected{% endif %}>Barras</option>
@@ -182,29 +234,12 @@ Gráficos (sem IA)
                     <option value="pie" {% if selected_chart_type == 'pie' %}selected{% endif %}>Pizza</option>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-3" data-view="chart">
                 <label class="form-label">Limite</label>
                 <input type="number" class="form-control" name="limit" id="limit-input" value="{{ selected_limit }}" min="1" max="200">
             </div>
-            <div class="col-md-5">
-                <label class="form-label">Visualização</label>
-                <div class="view-toggle" id="view-toggle">
-                    <div class="view-toggle__chip" data-mode="chart">
-                        <i class="fas fa-chart-column me-1"></i>Gráfico
-                    </div>
-                    <div class="form-check form-switch m-0">
-                        <input class="form-check-input" type="checkbox" role="switch" id="view-mode-switch" {% if view_mode != 'table' %}checked{% endif %}>
-                        <label class="form-check-label" for="view-mode-switch">
-                            <span class="visually-hidden">Alternar visualização</span>
-                        </label>
-                    </div>
-                    <div class="view-toggle__chip" data-mode="table">
-                        <i class="fas fa-table me-1"></i>Tabela
-                    </div>
-                </div>
-            </div>
             <div class="col-12 d-flex gap-2">
-                <button class="btn btn-primary btn-custom" type="submit" name="action" value="generate_chart" id="generate-btn">
+                <button class="btn btn-primary btn-custom" type="button" id="generate-btn">
                     <i class="fas {% if view_mode == 'table' %}fa-table{% else %}fa-chart-bar{% endif %} me-1" id="generate-icon"></i>
                     <span id="generate-label">{% if view_mode == 'table' %}Gerar tabela{% else %}Gerar gráfico{% endif %}</span>
                 </button>
@@ -229,8 +264,11 @@ Gráficos (sem IA)
     {% if chart_data or table_rows %}
         {% if view_mode == 'table' %}
             <div class="document-container chart-card chart-card--compact mt-3">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="mb-0"><i class="fas fa-table me-2"></i>Resultado da consulta</h5>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="mb-0">
+                                <i class="fas fa-table me-2"></i>Resultado da consulta
+                                <small class="text-white ms-2">({{ total_rows }} linhas)</small>
+                            </h5>
                     <div class="d-flex gap-2">
                         <button class="btn btn-outline-light btn-sm download-csv" type="button" data-action="download_csv">
                             <i class="fas fa-download me-1"></i>Baixar CSV
@@ -250,8 +288,9 @@ Gráficos (sem IA)
                             <tbody>
                                 {% for row in table_rows %}
                                     <tr>
-                                        <td>{{ row.label }}</td>
-                                        <td>{{ row.value }}</td>
+                                        {% for cell in row %}
+                                            <td>{{ cell }}</td>
+                                        {% endfor %}
                                     </tr>
                                 {% endfor %}
                             </tbody>
@@ -259,7 +298,7 @@ Gráficos (sem IA)
                     </div>
                     {% if total_pages > 1 %}
                         <div class="d-flex justify-content-between align-items-center mt-3">
-                            <small class="text-muted">Página {{ page }} de {{ total_pages }} ({{ total_rows }} registros)</small>
+                            <small class="text-white">Página {{ page }} de {{ total_pages }} ({{ total_rows }} registros)</small>
                             <div class="btn-group">
                                 <button class="btn btn-outline-secondary btn-sm js-page-btn" type="button" data-page="{{ page|add:'-1' }}" {% if page <= 1 %}disabled{% endif %}>Anterior</button>
                                 <button class="btn btn-outline-secondary btn-sm js-page-btn" type="button" data-page="{{ page|add:'1' }}" {% if page >= total_pages %}disabled{% endif %}>Próxima</button>
@@ -292,6 +331,8 @@ Gráficos (sem IA)
             {% endif %}
         {% endif %}
     {% endif %}
+        </div>
+    </div>
 </div>
 {{ columns|json_script:"label-columns" }}
 {{ numeric_columns|json_script:"value-columns" }}

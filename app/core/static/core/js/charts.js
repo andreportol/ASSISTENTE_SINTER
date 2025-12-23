@@ -2,14 +2,19 @@
     const tableSelect = document.getElementById('table-select');
     const labelValueSelect = document.getElementById('label-value-select');
     const valueValueSelect = document.getElementById('value-value-select');
-    const viewModeSwitch = document.getElementById('view-mode-switch');
+    const viewModeSwitches = document.querySelectorAll('.js-view-mode-switch');
     const viewModeInput = document.getElementById('view-mode-input');
-    const viewToggle = document.getElementById('view-toggle');
+    const viewToggles = document.querySelectorAll('.js-view-toggle');
     const generateLabel = document.getElementById('generate-label');
     const generateIcon = document.getElementById('generate-icon');
     const actionInput = document.getElementById('action-input');
     const pageInput = document.getElementById('page-input');
     const limitInput = document.getElementById('limit-input');
+    const generateBtn = document.getElementById('generate-btn');
+    const tableColsList = document.getElementById('table-cols-list');
+    const tableColsFilter = document.getElementById('table-cols-filter');
+    const tableColsSelectAll = document.getElementById('table-cols-select-all');
+    const tableColsClear = document.getElementById('table-cols-clear');
     const filterList = document.getElementById('filter-list');
     const addFilterBtn = document.getElementById('add-filter');
     const sourceCache = {};
@@ -18,7 +23,7 @@
         const form = (el && el.closest('form')) || document.getElementById('chart-form');
         if (!form) return;
         if (actionInput) {
-            actionInput.value = opts.action || 'generate_chart';
+            actionInput.value = opts.action || 'refresh';
         }
         if (pageInput) {
             if (opts.page) {
@@ -285,16 +290,20 @@
         });
     }
 
-    if (viewModeSwitch && viewModeInput) {
-        const syncViewMode = () => {
-            const isChart = viewModeSwitch.checked;
+    if (viewModeSwitches.length && viewModeInput) {
+        const setSwitches = (isChart) => {
+            viewModeSwitches.forEach((sw) => {
+                sw.checked = isChart;
+            });
+        };
+        const syncViewMode = (isChart) => {
             viewModeInput.value = isChart ? 'chart' : 'table';
-            if (viewToggle) {
-                viewToggle.querySelectorAll('.view-toggle__chip').forEach((chip) => {
+            viewToggles.forEach((toggle) => {
+                toggle.querySelectorAll('.view-toggle__chip').forEach((chip) => {
                     const mode = chip.dataset.mode;
                     chip.classList.toggle('is-active', mode === (isChart ? 'chart' : 'table'));
                 });
-            }
+            });
             if (generateLabel) {
                 generateLabel.textContent = isChart ? 'Gerar gráfico' : 'Gerar tabela';
             }
@@ -304,12 +313,94 @@
             if (limitInput) {
                 limitInput.disabled = !isChart;
             }
+            document.querySelectorAll('[data-view]').forEach((el) => {
+                const view = el.dataset.view;
+                el.classList.toggle('d-none', view !== (isChart ? 'chart' : 'table'));
+            });
+            if (tableColsFilter) {
+                tableColsFilter.disabled = isChart;
+            }
+            if (tableColsSelectAll) {
+                tableColsSelectAll.disabled = isChart;
+            }
+            if (tableColsClear) {
+                tableColsClear.disabled = isChart;
+            }
+            if (tableColsList) {
+                tableColsList.classList.toggle('is-disabled', isChart);
+                tableColsList.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+                    input.disabled = isChart;
+                });
+            }
         };
-        syncViewMode();
-        viewModeSwitch.addEventListener('change', () => {
-            syncViewMode();
-            submitForm(viewModeSwitch, { resetPage: true });
+
+        const initialIsChart = viewModeInput.value
+            ? viewModeInput.value === 'chart'
+            : viewModeSwitches[0].checked;
+        setSwitches(initialIsChart);
+        syncViewMode(initialIsChart);
+
+        viewModeSwitches.forEach((sw) => {
+            sw.addEventListener('change', () => {
+                const isChart = sw.checked;
+                setSwitches(isChart);
+                syncViewMode(isChart);
+                submitForm(sw, { resetPage: true });
+            });
         });
+
+        viewToggles.forEach((toggle) => {
+            toggle.querySelectorAll('.view-toggle__chip').forEach((chip) => {
+                chip.addEventListener('click', () => {
+                    const mode = chip.dataset.mode;
+                    const isChart = mode !== 'table';
+                    setSwitches(isChart);
+                    syncViewMode(isChart);
+                    submitForm(toggle, { resetPage: true });
+                });
+            });
+        });
+    }
+
+    if (generateBtn) {
+        generateBtn.addEventListener('click', () => {
+            submitForm(generateBtn, { action: 'generate_chart', resetPage: true });
+        });
+    }
+
+    if (tableColsList && tableColsFilter) {
+        const getVisibleItems = () => Array.from(tableColsList.querySelectorAll('.table-cols-item'))
+            .filter((item) => !item.classList.contains('d-none'));
+        const filterOptions = () => {
+            const term = tableColsFilter.value.trim().toLowerCase();
+            tableColsList.querySelectorAll('.table-cols-item').forEach((item) => {
+                const text = item.dataset.col || '';
+                const checkbox = item.querySelector('input[type="checkbox"]');
+                const matches = !term || text.includes(term);
+                const keepVisible = matches || (checkbox && checkbox.checked);
+                item.classList.toggle('d-none', !keepVisible);
+            });
+        };
+        const setChecked = (items, checked) => {
+            items.forEach((item) => {
+                const checkbox = item.querySelector('input[type="checkbox"]');
+                if (checkbox && !checkbox.disabled) {
+                    checkbox.checked = checked;
+                }
+            });
+        };
+        tableColsFilter.addEventListener('input', filterOptions);
+        tableColsFilter.addEventListener('focus', filterOptions);
+        if (tableColsSelectAll) {
+            tableColsSelectAll.addEventListener('click', () => {
+                setChecked(getVisibleItems(), true);
+            });
+        }
+        if (tableColsClear) {
+            tableColsClear.addEventListener('click', () => {
+                setChecked(Array.from(tableColsList.querySelectorAll('.table-cols-item')), false);
+            });
+        }
     }
 
     document.querySelectorAll('.download-csv').forEach((btn) => {
@@ -323,7 +414,7 @@
         btn.addEventListener('click', () => {
             const page = btn.dataset.page;
             if (!page) return;
-            submitForm(btn, { page });
+            submitForm(btn, { page, action: 'generate_chart' });
         });
     });
 })();
