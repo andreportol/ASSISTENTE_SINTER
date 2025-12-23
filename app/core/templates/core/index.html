@@ -11,7 +11,7 @@
         </div>
 
         <div class="col-12 col-lg-9">
-            <div class="document-container">
+            <div class="document-container panel-sidebar">
                 <form method="post" class="mb-4" id="ask-form">
                     {% csrf_token %}
                     <div class="mb-3">
@@ -71,7 +71,7 @@
                 {% endif %}
             </div>
 
-            <div class="document-container mt-4">
+            <div class="document-container panel-sidebar mt-4">
                 <h4 class="mb-3"><i class="fas fa-history me-2"></i>Histórico de Conversa</h4>
                 {% if history %}
                     <div class="timeline">

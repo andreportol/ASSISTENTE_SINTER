@@ -14,10 +14,11 @@ Gráficos (sem IA)
 {% endblock %}
 
 {% block body %}
-<div class="container-fluid px-0">
-    <div class="row g-4 mx-0">
-        <div class="col-12 col-lg-3 ps-0">
-            <div class="sidebar">
+<div class="charts-page">
+    <div class="container-fluid px-0">
+        <div class="row g-4 mx-0">
+            <div class="col-12 col-lg-3 ps-0">
+                <div class="sidebar">
                 <h5 class="d-flex align-items-center mb-3">
                     <i class="fas fa-layer-group me-2 text-info"></i>Visualização
                 </h5>
@@ -263,7 +264,7 @@ Gráficos (sem IA)
 
     {% if chart_data or table_rows %}
         {% if view_mode == 'table' %}
-            <div class="document-container chart-card chart-card--compact mt-3">
+            <div class="document-container panel-sidebar chart-card chart-card--compact mt-3">
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h5 class="mb-0">
                                 <i class="fas fa-table me-2"></i>Resultado da consulta
@@ -311,7 +312,7 @@ Gráficos (sem IA)
             </div>
         {% else %}
             {% if chart_data %}
-                <div class="document-container chart-card chart-card--compact mt-3">
+                <div class="document-container panel-sidebar chart-card chart-card--compact mt-3">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>{{ chart_data.title }}</h5>
                         <div class="d-flex gap-2">
@@ -331,6 +332,7 @@ Gráficos (sem IA)
             {% endif %}
         {% endif %}
     {% endif %}
+            </div>
         </div>
     </div>
 </div>

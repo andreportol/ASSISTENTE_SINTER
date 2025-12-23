@@ -604,6 +604,8 @@ def charts(request):
 
     tables = _get_authorized_tables()
     table = (request.POST.get("table") or request.GET.get("table") or "").strip()
+    if not table and "imoveis" in tables:
+        table = "imoveis"
     label_col = (request.POST.get("label_col") or "").strip()
     label_value = (request.POST.get("label_value") or "").strip()
     value_col = (request.POST.get("value_col") or "").strip()
