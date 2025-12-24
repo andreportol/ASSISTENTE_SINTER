@@ -3,12 +3,23 @@
         <i class="fas fa-layer-group me-2 text-info"></i>Fontes de pesquisa
     </h5>
     <ul>
-        <li>
-            <div class="doc-meta">
-                <i class="fas fa-database text-warning"></i>
-                <span class="doc-name">A tabela imóveis está liberada para pesquisa via agente SQL.</span>
-            </div>
-        </li>
+        {% if available_tables %}
+            {% for table in available_tables %}
+                <li>
+                    <div class="doc-meta">
+                        <i class="fas fa-database text-warning"></i>
+                        <span class="doc-name">{{ table }}</span>
+                    </div>
+                </li>
+            {% endfor %}
+        {% else %}
+            <li>
+                <div class="doc-meta">
+                    <i class="fas fa-database text-warning"></i>
+                    <span class="doc-name">Nenhuma tabela disponível para consulta.</span>
+                </div>
+            </li>
+        {% endif %}
         {% if available_docs %}
             {% for doc in available_docs %}
                 <li>
@@ -39,6 +50,9 @@
             </li>
         {% endif %}
     </ul>
+    <button class="btn btn-sm btn-outline-primary w-100 mt-2" type="button" data-bs-toggle="modal" data-bs-target="#examples-modal">
+        <i class="fas fa-lightbulb me-1"></i>Exemplos de perguntas
+    </button>
     <form method="post" enctype="multipart/form-data" class="upload-form">
         {% csrf_token %}
         <div class="input-group input-group-sm">
@@ -108,4 +122,61 @@
             </div>
         </div>
     </form>
+</div>
+
+<div class="modal fade" id="examples-modal" tabindex="-1" aria-labelledby="examples-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-dark" id="examples-modal-label">
+                    <i class="fas fa-lightbulb me-2 text-dark"></i>Exemplos de perguntas
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                {% if available_tables %}
+                    <p class="text-muted mb-3">Exemplos baseados nas tabelas liberadas para consulta.</p>
+                    <ul class="list-group mb-4">
+                        {% for table in available_tables|slice:":5" %}
+                            <li class="list-group-item">
+                                <strong>{{ table }}</strong>
+                                <div class="small text-muted mt-1">
+                                    Quantos registros existem na tabela {{ table }}?
+                                </div>
+                                <div class="small text-muted">
+                                    Gere um relatório em PDF com o resumo da tabela {{ table }}.
+                                </div>
+                                <div class="small text-muted">
+                                    Crie um gráfico com a contagem por categoria na tabela {{ table }}.
+                                </div>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <div class="alert alert-secondary" role="alert">
+                        Nenhuma tabela disponível para gerar exemplos.
+                    </div>
+                {% endif %}
+                {% if available_docs %}
+                    <p class="text-muted mb-2">Exemplos baseados nos documentos carregados.</p>
+                    <ul class="list-group">
+                        {% for doc in available_docs|slice:":5" %}
+                            <li class="list-group-item">
+                                <strong>{{ doc }}</strong>
+                                <div class="small text-muted mt-1">
+                                    Resuma os pontos principais do documento {{ doc }}.
+                                </div>
+                                <div class="small text-muted">
+                                    Extraia os dados relevantes do documento {{ doc }}.
+                                </div>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
 </div>

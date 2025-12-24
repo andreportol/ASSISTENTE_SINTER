@@ -879,6 +879,7 @@ def index(request):
     # inverte para mostrar as últimas no topo
     display_history = list(reversed(display_history))
     available_docs = sorted([p.name for p in docs_dir.glob("*") if p.is_file()])
+    available_tables = sorted(_get_authorized_tables())
 
     return render(
         request,
@@ -893,6 +894,7 @@ def index(request):
             "rules_path": getattr(settings, "CORE_RULES_PATH", None) or os.getenv("CORE_RULES_PATH"),
             "using_postgres": "postgresql" in settings.DATABASES.get("default", {}).get("ENGINE", ""),
             "available_docs": available_docs,
+            "available_tables": available_tables,
             "docs_dir": str(docs_dir),
             "history": display_history,
             "chart_data": chart_data,
