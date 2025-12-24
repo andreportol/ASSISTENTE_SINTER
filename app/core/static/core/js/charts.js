@@ -18,6 +18,51 @@
     const filterList = document.getElementById('filter-list');
     const addFilterBtn = document.getElementById('add-filter');
     const sourceCache = {};
+    const resetTableFilter = () => {
+        if (!tableColsList || !tableColsFilter) return;
+        tableColsFilter.value = '';
+        tableColsList.querySelectorAll('.table-cols-item').forEach((item) => {
+            item.classList.remove('d-none');
+        });
+    };
+    const resetFilterRows = () => {
+        if (!filterList) return;
+        const rows = filterList.querySelectorAll('.filter-row');
+        rows.forEach((row, idx) => {
+            if (idx > 0) {
+                row.remove();
+                return;
+            }
+            const input = row.querySelector('.filter-col-input');
+            const results = row.querySelector('.filter-col-results');
+            const select = row.querySelector('.filter-value-select');
+            const valueInput = row.querySelector('.filter-value-input');
+            const valueList = row.querySelector('datalist');
+            const opHidden = row.querySelector('.filter-op-value');
+            const opRadios = row.querySelectorAll('.filter-op-radio');
+            if (input) input.value = '';
+            if (results) {
+                results.innerHTML = '';
+                results.classList.add('d-none');
+            }
+            if (select) {
+                select.value = '';
+                while (select.options.length > 1) {
+                    select.remove(1);
+                }
+            }
+            if (valueInput) valueInput.value = '';
+            if (valueList) valueList.innerHTML = '';
+            if (opHidden) opHidden.value = 'and';
+            if (opRadios.length) {
+                opRadios.forEach((radio) => {
+                    radio.checked = radio.value === 'and';
+                });
+            }
+        });
+        renumberFilterRows();
+        updateRemoveButtons();
+    };
 
     const submitForm = (el, opts = {}) => {
         const form = (el && el.closest('form')) || document.getElementById('chart-form');
@@ -355,17 +400,25 @@
             }
         };
 
-        const initialIsChart = viewModeInput.value
+        let currentIsChart = viewModeInput.value
             ? viewModeInput.value === 'chart'
             : viewModeSwitches[0].checked;
-        setSwitches(initialIsChart);
-        syncViewMode(initialIsChart);
+        setSwitches(currentIsChart);
+        syncViewMode(currentIsChart);
+        const handleViewChange = (isChart) => {
+            if (currentIsChart !== isChart && isChart) {
+                resetTableFilter();
+                resetFilterRows();
+            }
+            currentIsChart = isChart;
+            setSwitches(isChart);
+            syncViewMode(isChart);
+        };
 
         viewModeSwitches.forEach((sw) => {
             sw.addEventListener('change', () => {
                 const isChart = sw.checked;
-                setSwitches(isChart);
-                syncViewMode(isChart);
+                handleViewChange(isChart);
                 submitForm(sw, { resetPage: true });
             });
         });
@@ -375,8 +428,7 @@
                 chip.addEventListener('click', () => {
                     const mode = chip.dataset.mode;
                     const isChart = mode !== 'table';
-                    setSwitches(isChart);
-                    syncViewMode(isChart);
+                    handleViewChange(isChart);
                     submitForm(toggle, { resetPage: true });
                 });
             });
