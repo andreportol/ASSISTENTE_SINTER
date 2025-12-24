@@ -4,6 +4,7 @@ import json
 import os
 import re
 import unicodedata
+from decimal import Decimal
 from pathlib import Path
 
 from django.conf import settings
@@ -103,6 +104,24 @@ def _build_agg_expression(agg: str, value_col: str | None) -> str:
     if not value_col:
         raise ValueError("Coluna numerica obrigatoria para SUM ou AVG.")
     return f"{agg.upper()}(CAST({value_col} AS NUMERIC))"
+
+
+def _agg_label_pt(agg: str) -> str:
+    labels = {"count": "Contagem", "sum": "Soma", "avg": "Média"}
+    return labels.get(agg, agg.upper())
+
+
+def _format_pt_br(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, (int, float, Decimal)):
+        dec = value if isinstance(value, Decimal) else Decimal(str(value))
+        dec = dec.quantize(Decimal("0.01"))
+        formatted = f"{dec:,.2f}"
+        return formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+    return str(value)
 
 
 def _build_chart_data(sql: str, chart_type: str = "bar") -> dict | None:
@@ -354,6 +373,67 @@ def _get_authorized_tables() -> list[str]:
             )
             return [row[0] for row in cursor.fetchall()]
     return conn.introspection.table_names()
+
+
+def _get_foreign_key_map(table_name: str) -> dict[str, tuple[str, str]]:
+    conn = connections["default"]
+    if conn.vendor != "postgresql":
+        return {}
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT
+                kcu.column_name,
+                ccu.table_name AS foreign_table_name,
+                ccu.column_name AS foreign_column_name
+            FROM information_schema.table_constraints AS tc
+            JOIN information_schema.key_column_usage AS kcu
+                ON tc.constraint_name = kcu.constraint_name
+                AND tc.table_schema = kcu.table_schema
+            JOIN information_schema.constraint_column_usage AS ccu
+                ON ccu.constraint_name = tc.constraint_name
+                AND ccu.table_schema = tc.table_schema
+            WHERE tc.constraint_type = 'FOREIGN KEY'
+              AND tc.table_schema = 'public'
+              AND tc.table_name = %s
+            """,
+            [table_name],
+        )
+        rows = cursor.fetchall()
+    return {row[0]: (row[1], row[2]) for row in rows}
+
+
+def _get_display_column(table_name: str) -> str | None:
+    columns = _get_table_columns(table_name)
+    if "nome" in columns:
+        return "nome"
+    return None
+
+
+def _build_column_display_map(table_name: str, columns: list[str]) -> dict[str, str]:
+    fk_map = _get_foreign_key_map(table_name)
+    display_map: dict[str, str] = {}
+    used_labels: set[str] = set()
+    for col in columns:
+        label = col
+        ref = fk_map.get(col)
+        if ref:
+            ref_table, _ref_col = ref
+            display_col = _get_display_column(ref_table)
+            if display_col and col.endswith("_id"):
+                base = ref_table[:-1] if ref_table.endswith("s") else ref_table
+                label = f"{display_col}_{base}"
+        if label in used_labels:
+            label = col
+        used_labels.add(label)
+        display_map[col] = label
+    return display_map
+
+
+def _resolve_column_input(value: str, reverse_map: dict[str, str]) -> str:
+    if not value:
+        return value
+    return reverse_map.get(value, value)
 
 
 def _match_identifier(candidate: str, available: list[str]) -> str | None:
@@ -920,6 +1000,9 @@ def charts(request):
     value_col = (request.POST.get("value_col") or "").strip()
     value_value = (request.POST.get("value_value") or "").strip()
     table_cols = [val.strip() for val in request.POST.getlist("table_cols")]
+    table_group_by = (request.POST.get("table_group_by") or "").strip()
+    table_group_agg = (request.POST.get("table_group_agg") or "count").strip().lower()
+    table_group_value = (request.POST.get("table_group_value") or "").strip()
     filter_cols = [val.strip() for val in request.POST.getlist("filter_col")]
     filter_values = [val.strip() for val in request.POST.getlist("filter_value")]
     filter_ops = [val.strip().lower() for val in request.POST.getlist("filter_op")]
@@ -946,6 +1029,16 @@ def charts(request):
     limit = max(1, min(limit, 200))
     columns = _get_table_columns(table) if table else []
     numeric_columns = _get_numeric_columns(table) if table else []
+    column_display_map = _build_column_display_map(table, columns) if table else {}
+    column_display_reverse = {label: col for col, label in column_display_map.items()}
+    display_columns = [column_display_map.get(col, col) for col in columns]
+    display_numeric_columns = [column_display_map.get(col, col) for col in numeric_columns]
+    label_col = _resolve_column_input(label_col, column_display_reverse)
+    value_col = _resolve_column_input(value_col, column_display_reverse)
+    table_group_by = _resolve_column_input(table_group_by, column_display_reverse)
+    table_group_value = _resolve_column_input(table_group_value, column_display_reverse)
+    table_cols = [_resolve_column_input(val, column_display_reverse) for val in table_cols]
+    filter_cols = [_resolve_column_input(val, column_display_reverse) for val in filter_cols]
     valid_table_cols = [col for col in table_cols if _is_valid_identifier(col) and col in columns]
     label_values = _get_distinct_values(table, label_col) if table and label_col else []
     value_values = _get_distinct_values(table, value_col) if table and value_col else []
@@ -961,7 +1054,14 @@ def charts(request):
             op = "and"
         values, truncated = _get_distinct_values_with_flag(table, col) if table and col else ([], False)
         filter_rows.append(
-            {"col": col, "value": val, "values": values, "op": op, "allow_text": truncated}
+            {
+                "col": col,
+                "display_col": column_display_map.get(col, col),
+                "value": val,
+                "values": values,
+                "op": op,
+                "allow_text": truncated,
+            }
         )
 
     table_headers: list[str] = []
@@ -974,10 +1074,23 @@ def charts(request):
         if not _is_valid_identifier(table) or table not in tables:
             error_message = "Selecione uma tabela válida."
         elif view_mode == "table":
-            if not table_cols:
-                error_message = "Selecione ao menos uma coluna para a tabela."
-            elif len(valid_table_cols) != len(table_cols):
-                error_message = "Selecione colunas válidas para a tabela."
+            if table_group_by:
+                if not _is_valid_identifier(table_group_by) or table_group_by not in columns:
+                    error_message = "Selecione uma coluna válida para agrupar."
+                elif table_group_agg not in {"count", "sum", "avg"}:
+                    error_message = "Selecione uma agregação válida para o agrupamento."
+                elif table_group_agg == "count" and table_group_value:
+                    if not _is_valid_identifier(table_group_value) or table_group_value not in columns:
+                        error_message = "Selecione uma coluna válida para COUNT."
+                elif table_group_agg != "count" and (
+                    not _is_valid_identifier(table_group_value) or table_group_value not in numeric_columns
+                ):
+                    error_message = "Selecione uma coluna numérica válida para agregação."
+            else:
+                if not table_cols:
+                    error_message = "Selecione ao menos uma coluna para a tabela."
+                elif len(valid_table_cols) != len(table_cols):
+                    error_message = "Selecione colunas válidas para a tabela."
         else:
             if not _is_valid_identifier(label_col):
                 error_message = "Selecione uma coluna válida para o eixo X."
@@ -1014,9 +1127,9 @@ def charts(request):
                     "tables": tables,
                     "columns": columns,
                     "selected_table": table,
-                    "selected_label": label_col,
+                    "selected_label": column_display_map.get(label_col, label_col),
                     "selected_label_value": label_value,
-                    "selected_value": value_col,
+                    "selected_value": column_display_map.get(value_col, value_col),
                     "selected_value_value": value_value,
                     "selected_agg": agg,
                     "selected_chart_type": chart_type,
@@ -1030,11 +1143,17 @@ def charts(request):
                     "filter_rows": filter_rows,
                     "numeric_columns": numeric_columns,
                     "selected_table_cols": valid_table_cols,
+                    "selected_table_group_by": column_display_map.get(table_group_by, table_group_by),
+                    "selected_table_group_agg": table_group_agg,
+                    "selected_table_group_value": column_display_map.get(table_group_value, table_group_value),
                     "chart_data": chart_data,
                     "table_headers": table_headers,
                     "table_rows": table_rows,
                     "chart_error": chart_error,
                     "error_message": error_message,
+                    "column_display_map": column_display_map,
+                    "display_columns": display_columns,
+                    "display_numeric_columns": display_numeric_columns,
                 },
             )
 
@@ -1042,12 +1161,13 @@ def charts(request):
             params: list[str] = []
             where_clauses = []
             filter_expr = ""
+            table_prefix = f"{table}." if _is_valid_identifier(table) else ""
             for row in filter_rows:
                 col = row["col"]
                 val = row["value"]
                 if not col or not val:
                     continue
-                clause = f"{col} = %s"
+                clause = f"{table_prefix}{col} = %s"
                 if not filter_expr:
                     filter_expr = clause
                 else:
@@ -1061,34 +1181,99 @@ def charts(request):
 
             with connections["default"].cursor() as cursor:
                 if view_mode == "table":
-                    selected_cols = valid_table_cols
-                    table_headers = selected_cols
-                    base_sql = f"SELECT {', '.join(selected_cols)} FROM {table}"
-                    if where_clauses:
-                        base_sql += " WHERE " + " AND ".join(where_clauses)
-                    order_sql = f"{base_sql} ORDER BY {selected_cols[0]}"
+                    if table_group_by:
+                        select_expr = _build_agg_expression(table_group_agg, table_group_value)
+                        base_sql = f"SELECT {table_group_by} AS label, {select_expr} AS value FROM {table}"
+                        if where_clauses:
+                            base_sql += " WHERE " + " AND ".join(where_clauses)
+                        base_sql += f" GROUP BY {table_group_by}"
+                        order_sql = f"{base_sql} ORDER BY value DESC"
+                        table_headers = [
+                            table_group_by,
+                            f"{_agg_label_pt(table_group_agg)}({table_group_value})"
+                            if table_group_value
+                            else f"{_agg_label_pt(table_group_agg)}(*)",
+                        ]
 
-                    if action == "download_csv":
-                        cursor.execute(order_sql, params)
+                        if action == "download_csv":
+                            cursor.execute(order_sql, params)
+                            rows = cursor.fetchall()
+                            response = HttpResponse(content_type="text/csv")
+                            filename = get_valid_filename(
+                                f"{table}_{table_group_by}_{table_group_agg}.csv"
+                            ) or "dados.csv"
+                            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+                            writer = csv.writer(response)
+                            writer.writerow(table_headers)
+                            for row in rows:
+                                writer.writerow([row[0], row[1]])
+                            return response
+
+                        count_sql = f"SELECT COUNT(*) FROM ({base_sql}) AS subquery"
+                        cursor.execute(count_sql, params)
+                        total_rows = int(cursor.fetchone()[0] or 0)
+                        total_pages = max(1, (total_rows + TABLE_PAGE_SIZE - 1) // TABLE_PAGE_SIZE)
+                        page = min(page, total_pages)
+                        offset = (page - 1) * TABLE_PAGE_SIZE
+                        cursor.execute(f"{order_sql} LIMIT %s OFFSET %s", params + [TABLE_PAGE_SIZE, offset])
                         rows = cursor.fetchall()
-                        response = HttpResponse(content_type="text/csv")
-                        filename = get_valid_filename(f"{table}_tabela.csv") or "dados.csv"
-                        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-                        writer = csv.writer(response)
-                        writer.writerow(table_headers)
-                        for row in rows:
-                            writer.writerow(list(row))
-                        return response
+                        table_rows = [[_format_pt_br(row[0]), _format_pt_br(row[1])] for row in rows]
+                    else:
+                        selected_cols = valid_table_cols
+                        fk_map = _get_foreign_key_map(table)
+                        select_exprs: list[str] = []
+                        select_aliases: list[str] = []
+                        table_headers = []
+                        join_clauses: list[str] = []
+                        for col in selected_cols:
+                            ref = fk_map.get(col)
+                            if ref:
+                                ref_table, ref_col = ref
+                                display_col = _get_display_column(ref_table)
+                                if display_col:
+                                    alias = f"{ref_table}_{col}"
+                                    join_clauses.append(
+                                        f"LEFT JOIN {ref_table} {alias} ON {table}.{col} = {alias}.{ref_col}"
+                                    )
+                                    select_exprs.append(f"{alias}.{display_col} AS {col}_nome")
+                                    select_aliases.append(f"{col}_nome")
+                                    if col.endswith("_id"):
+                                        table_headers.append(col[:-3])
+                                    else:
+                                        table_headers.append(col)
+                                    continue
+                            select_exprs.append(f"{table}.{col}")
+                            select_aliases.append(col)
+                            table_headers.append(col)
 
-                    count_sql = f"SELECT COUNT(*) FROM ({base_sql}) AS subquery"
-                    cursor.execute(count_sql, params)
-                    total_rows = int(cursor.fetchone()[0] or 0)
-                    total_pages = max(1, (total_rows + TABLE_PAGE_SIZE - 1) // TABLE_PAGE_SIZE)
-                    page = min(page, total_pages)
-                    offset = (page - 1) * TABLE_PAGE_SIZE
-                    cursor.execute(f"{order_sql} LIMIT %s OFFSET %s", params + [TABLE_PAGE_SIZE, offset])
-                    rows = cursor.fetchall()
-                    table_rows = [[str(cell) for cell in row] for row in rows]
+                        base_sql = f"SELECT {', '.join(select_exprs)} FROM {table}"
+                        if join_clauses:
+                            base_sql += " " + " ".join(join_clauses)
+                        if where_clauses:
+                            base_sql += " WHERE " + " AND ".join(where_clauses)
+                        order_sql = f"{base_sql} ORDER BY 1"
+
+                        if action == "download_csv":
+                            cursor.execute(order_sql, params)
+                            rows = cursor.fetchall()
+                            response = HttpResponse(content_type="text/csv")
+                            filename = get_valid_filename(f"{table}_tabela.csv") or "dados.csv"
+                            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+                            writer = csv.writer(response)
+                            writer.writerow(table_headers)
+                            for row in rows:
+                                writer.writerow(list(row))
+                            return response
+
+                        count_sql = f"SELECT COUNT(*) FROM ({base_sql}) AS subquery"
+                        cursor.execute(count_sql, params)
+                        total_rows = int(cursor.fetchone()[0] or 0)
+                        total_pages = max(1, (total_rows + TABLE_PAGE_SIZE - 1) // TABLE_PAGE_SIZE)
+                        page = min(page, total_pages)
+                        offset = (page - 1) * TABLE_PAGE_SIZE
+                        cursor.execute(f"{order_sql} LIMIT %s OFFSET %s", params + [TABLE_PAGE_SIZE, offset])
+                        rows = cursor.fetchall()
+                        table_rows = [[_format_pt_br(cell) for cell in row] for row in rows]
                 else:
                     select_expr = _build_agg_expression(agg, value_col)
                     base_sql = f"SELECT {label_col} AS label, {select_expr} AS value FROM {table}"
@@ -1108,12 +1293,14 @@ def charts(request):
                     cols = [col[0] for col in (cursor.description or [])]
                     chart_data = _build_chart_data_from_rows(rows, cols, chart_type)
                     if chart_data:
-                        chart_data["title"] = f"{agg.upper()} por {label_col}"
+                        chart_data["title"] = f"{_agg_label_pt(agg)} por {label_col}"
 
-                    table_rows = [[str(row[0]), str(row[1])] for row in rows]
+                    table_rows = [[_format_pt_br(row[0]), _format_pt_br(row[1])] for row in rows]
                     total_rows = len(table_rows)
                     total_pages = 1
-                    value_header = f"{agg.upper()}({value_col})" if value_col else f"{agg.upper()}(*)"
+                    value_header = (
+                        f"{_agg_label_pt(agg)}({value_col})" if value_col else f"{_agg_label_pt(agg)}(*)"
+                    )
                     table_headers = [label_col, value_header]
 
                     if action == "download_csv":
@@ -1135,9 +1322,9 @@ def charts(request):
             "tables": tables,
             "columns": columns,
             "selected_table": table,
-            "selected_label": label_col,
+            "selected_label": column_display_map.get(label_col, label_col),
             "selected_label_value": label_value,
-            "selected_value": value_col,
+            "selected_value": column_display_map.get(value_col, value_col),
             "selected_value_value": value_value,
             "selected_table_cols": valid_table_cols,
             "selected_agg": agg,
@@ -1154,7 +1341,13 @@ def charts(request):
             "chart_data": chart_data,
             "table_headers": table_headers,
             "table_rows": table_rows,
+            "selected_table_group_by": column_display_map.get(table_group_by, table_group_by),
+            "selected_table_group_agg": table_group_agg,
+            "selected_table_group_value": column_display_map.get(table_group_value, table_group_value),
             "chart_error": chart_error,
             "error_message": error_message,
+            "column_display_map": column_display_map,
+            "display_columns": display_columns,
+            "display_numeric_columns": display_numeric_columns,
         },
     )

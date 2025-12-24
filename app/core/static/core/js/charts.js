@@ -17,7 +17,34 @@
     const tableColsClear = document.getElementById('table-cols-clear');
     const filterList = document.getElementById('filter-list');
     const addFilterBtn = document.getElementById('add-filter');
+    const tableGroupByInput = document.getElementById('table-group-by-input');
+    const tableGroupValueInput = document.getElementById('table-group-value-input');
+    const tableGroupAggSelect = document.getElementById('table-group-agg');
+    const tableColsGroupByHint = document.getElementById('table-cols-groupby-hint');
     const sourceCache = {};
+    const syncTableColsDisabled = () => {
+        const isChart = viewModeInput ? viewModeInput.value === 'chart' : true;
+        const hasGroupBy = Boolean(tableGroupByInput && tableGroupByInput.value.trim());
+        const disableCols = isChart || hasGroupBy;
+        if (tableColsFilter) {
+            tableColsFilter.disabled = disableCols;
+        }
+        if (tableColsSelectAll) {
+            tableColsSelectAll.disabled = disableCols;
+        }
+        if (tableColsClear) {
+            tableColsClear.disabled = disableCols;
+        }
+        if (tableColsList) {
+            tableColsList.classList.toggle('is-disabled', disableCols);
+            tableColsList.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+                input.disabled = disableCols;
+            });
+        }
+        if (tableColsGroupByHint) {
+            tableColsGroupByHint.classList.toggle('d-none', !hasGroupBy || isChart);
+        }
+    };
     const resetTableFilter = () => {
         if (!tableColsList || !tableColsFilter) return;
         tableColsFilter.value = '';
@@ -122,8 +149,15 @@
         const filterSuggestions = () => {
             const values = getSourceValues(input);
             const term = input.value.trim().toLowerCase();
+            const tableFilter = input.dataset.useTableFilter === '1' && tableColsFilter
+                ? tableColsFilter.value.trim().toLowerCase()
+                : '';
             const filtered = values
-                .filter((value) => !term || String(value).toLowerCase().includes(term))
+                .filter((value) => {
+                    const normalized = String(value).toLowerCase();
+                    return (!term || normalized.includes(term))
+                        && (!tableFilter || normalized.includes(tableFilter));
+                })
                 .slice(0, MAX_SUGGESTIONS);
             showSuggestions(filtered);
         };
@@ -156,12 +190,27 @@
         return input;
     };
 
+    const isFilterRowEmpty = (row) => {
+        if (!row) return true;
+        const col = row.querySelector('.filter-col-input');
+        const valueSelect = row.querySelector('.filter-value-select');
+        const valueInput = row.querySelector('.filter-value-input');
+        const colValue = col ? col.value.trim() : '';
+        const valueValue = valueSelect ? valueSelect.value.trim() : (valueInput ? valueInput.value.trim() : '');
+        return !colValue && !valueValue;
+    };
+
     const updateRemoveButtons = () => {
         if (!filterList) return;
         const rows = filterList.querySelectorAll('.filter-row');
         rows.forEach((row) => {
             const btn = row.querySelector('.btn-remove-filter');
-            if (btn) btn.disabled = rows.length <= 1;
+            if (!btn) return;
+            if (rows.length === 1) {
+                btn.disabled = isFilterRowEmpty(row);
+            } else {
+                btn.disabled = false;
+            }
         });
     };
 
@@ -212,6 +261,7 @@
         const valueSelect = row.querySelector('.filter-value-select');
         const valueInput = row.querySelector('.filter-value-input');
         const valueList = row.querySelector('datalist');
+        const valueHint = row.querySelector('.filter-value-hint');
         const removeBtn = row.querySelector('.btn-remove-filter');
         const opHidden = row.querySelector('.filter-op-value');
         const opRadios = row.querySelectorAll('.filter-op-radio');
@@ -230,8 +280,19 @@
                 if (valueSelect) valueSelect.value = '';
                 if (valueInput) valueInput.value = '';
                 if (valueList) valueList.innerHTML = '';
+                updateRemoveButtons();
                 submitForm(input, { resetPage: true });
             });
+            input.addEventListener('input', updateRemoveButtons);
+        }
+
+        if (valueSelect) {
+            valueSelect.addEventListener('change', updateRemoveButtons);
+        }
+
+        if (valueInput) {
+            valueInput.addEventListener('input', updateRemoveButtons);
+            valueInput.addEventListener('change', updateRemoveButtons);
         }
 
         if (opHidden && opRadios.length) {
@@ -246,6 +307,26 @@
 
         if (removeBtn) {
             removeBtn.addEventListener('click', () => {
+                const rows = filterList ? filterList.querySelectorAll('.filter-row') : [];
+                if (rows.length <= 1) {
+                    if (input) input.value = '';
+                    if (results) {
+                        results.innerHTML = '';
+                        results.classList.add('d-none');
+                    }
+                if (valueSelect) valueSelect.value = '';
+                if (valueInput) valueInput.value = '';
+                if (valueList) valueList.innerHTML = '';
+                if (valueHint) valueHint.classList.add('d-none');
+                if (opHidden) opHidden.value = 'and';
+                if (opRadios.length) {
+                    opRadios.forEach((radio) => {
+                        radio.checked = radio.value === 'and';
+                    });
+                    }
+                    updateRemoveButtons();
+                    return;
+                }
                 row.remove();
                 renumberFilterRows();
                 updateRemoveButtons();
@@ -262,6 +343,11 @@
         if (valueValueSelect) valueValueSelect.value = '';
         submitForm(valueInput, { resetPage: true });
     });
+
+    setupTypeahead('table-group-by-input', 'table-group-by-results', () => {
+        syncTableColsDisabled();
+    });
+    setupTypeahead('table-group-value-input', 'table-group-value-results');
 
     if (filterList) {
         filterList.querySelectorAll('.filter-row').forEach((row) => initFilterRow(row));
@@ -314,6 +400,9 @@
             if (valueInput) valueInput.value = '';
             if (labelValueSelect) labelValueSelect.value = '';
             if (valueValueSelect) valueValueSelect.value = '';
+            if (tableGroupByInput) tableGroupByInput.value = '';
+            if (tableGroupValueInput) tableGroupValueInput.value = '';
+            if (tableGroupAggSelect) tableGroupAggSelect.value = 'count';
 
             if (filterList) {
                 const rows = filterList.querySelectorAll('.filter-row');
@@ -352,6 +441,7 @@
                 renumberFilterRows();
                 updateRemoveButtons();
             }
+            syncTableColsDisabled();
             submitForm(tableSelect, { resetPage: true });
         });
     }
@@ -383,21 +473,7 @@
                 const view = el.dataset.view;
                 el.classList.toggle('d-none', view !== (isChart ? 'chart' : 'table'));
             });
-            if (tableColsFilter) {
-                tableColsFilter.disabled = isChart;
-            }
-            if (tableColsSelectAll) {
-                tableColsSelectAll.disabled = isChart;
-            }
-            if (tableColsClear) {
-                tableColsClear.disabled = isChart;
-            }
-            if (tableColsList) {
-                tableColsList.classList.toggle('is-disabled', isChart);
-                tableColsList.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-                    input.disabled = isChart;
-                });
-            }
+            syncTableColsDisabled();
         };
 
         let currentIsChart = viewModeInput.value
@@ -405,15 +481,16 @@
             : viewModeSwitches[0].checked;
         setSwitches(currentIsChart);
         syncViewMode(currentIsChart);
-        const handleViewChange = (isChart) => {
-            if (currentIsChart !== isChart && isChart) {
-                resetTableFilter();
-                resetFilterRows();
-            }
-            currentIsChart = isChart;
-            setSwitches(isChart);
-            syncViewMode(isChart);
-        };
+            const handleViewChange = (isChart) => {
+                if (currentIsChart !== isChart && isChart) {
+                    resetTableFilter();
+                    resetFilterRows();
+                }
+                currentIsChart = isChart;
+                setSwitches(isChart);
+                syncViewMode(isChart);
+                syncTableColsDisabled();
+            };
 
         viewModeSwitches.forEach((sw) => {
             sw.addEventListener('change', () => {
@@ -453,6 +530,12 @@
                 const keepVisible = matches || (checkbox && checkbox.checked);
                 item.classList.toggle('d-none', !keepVisible);
             });
+            if (tableGroupByInput) {
+                tableGroupByInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            if (tableGroupValueInput) {
+                tableGroupValueInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
         };
         const setChecked = (items, checked) => {
             items.forEach((item) => {
@@ -490,6 +573,58 @@
             submitForm(btn, { page, action: 'generate_chart' });
         });
     });
+
+    if (tableGroupByInput) {
+        tableGroupByInput.addEventListener('input', syncTableColsDisabled);
+        tableGroupByInput.addEventListener('change', syncTableColsDisabled);
+    }
+    syncTableColsDisabled();
+})();
+
+(function() {
+    const groupAggSelect = document.getElementById('table-group-agg');
+    const groupByInput = document.getElementById('table-group-by-input');
+    const groupValueInput = document.getElementById('table-group-value-input');
+    if (!groupAggSelect || !groupByInput || !groupValueInput) return;
+    const getSourceValues = (input) => {
+        const sourceId = input.dataset.source;
+        if (!sourceId) return [];
+        const sourceEl = document.getElementById(sourceId);
+        if (!sourceEl) return [];
+        try {
+            return JSON.parse(sourceEl.textContent || '[]');
+        } catch (err) {
+            return [];
+        }
+    };
+    const toggleGroupValue = () => {
+        const hasGroupBy = Boolean(groupByInput.value.trim());
+        const isCount = groupAggSelect.value === 'count';
+        if (!hasGroupBy) {
+            groupValueInput.disabled = true;
+            groupValueInput.value = '';
+            groupValueInput.dataset.source = 'all-columns';
+            groupValueInput.placeholder = 'Selecione ou digite a coluna...';
+            return;
+        }
+        const shouldDisable = isCount;
+        groupValueInput.disabled = shouldDisable;
+        if (shouldDisable) {
+            groupValueInput.value = '';
+        }
+        groupValueInput.dataset.source = isCount ? 'all-columns' : 'value-columns';
+        groupValueInput.placeholder = isCount ? 'Coluna para contagem (opcional)' : 'Selecione ou digite a coluna...';
+        if (!isCount && groupValueInput.value) {
+            const numericValues = getSourceValues(groupValueInput);
+            if (!numericValues.includes(groupValueInput.value)) {
+                groupValueInput.value = '';
+            }
+        }
+    };
+    groupAggSelect.addEventListener('change', toggleGroupValue);
+    groupByInput.addEventListener('change', toggleGroupValue);
+    groupByInput.addEventListener('input', toggleGroupValue);
+    toggleGroupValue();
 })();
 
 (function() {
@@ -510,9 +645,12 @@
     };
     const toggleValue = () => {
         const isCount = aggSelect.value === 'count';
-        valueInput.disabled = false;
+        valueInput.disabled = isCount;
         valueInput.dataset.source = isCount ? 'all-columns' : 'value-columns';
-        valueInput.placeholder = isCount ? 'Coluna para COUNT (opcional)' : 'Selecione ou digite...';
+        valueInput.placeholder = isCount ? 'Coluna para contagem (opcional)' : 'Selecione ou digite...';
+        if (isCount) {
+            valueInput.value = '';
+        }
         if (!isCount && valueInput.value) {
             const numericValues = getSourceValues(valueInput);
             if (!numericValues.includes(valueInput.value)) {
@@ -520,7 +658,7 @@
             }
         }
         if (valueValueSelect) {
-            valueValueSelect.disabled = !valueInput.value;
+            valueValueSelect.disabled = isCount || !valueInput.value;
         }
         if (isCount) {
             if (valueValueSelect) {
@@ -583,8 +721,25 @@
     const downloadBtn = document.getElementById('download-chart');
     if (downloadBtn) {
         downloadBtn.addEventListener('click', () => {
+            const title = cfg.title || '';
+            const padding = title ? 36 : 0;
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = chartCanvas.width;
+            exportCanvas.height = chartCanvas.height + padding;
+            const ctx = exportCanvas.getContext('2d');
+            if (!ctx) return;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+            if (title) {
+                ctx.fillStyle = '#111111';
+                ctx.font = '600 16px "Segoe UI", Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(title, exportCanvas.width / 2, padding / 2);
+            }
+            ctx.drawImage(chartCanvas, 0, padding);
             const link = document.createElement('a');
-            link.href = chartCanvas.toDataURL('image/png');
+            link.href = exportCanvas.toDataURL('image/png');
             link.download = `grafico_${Date.now()}.png`;
             link.click();
         });

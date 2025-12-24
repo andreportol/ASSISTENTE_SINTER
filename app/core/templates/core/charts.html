@@ -1,5 +1,6 @@
 {% extends "core/base.html" %}
 {% load static %}
+{% load core_extras %}
 
 {% block title %}SINTER - Gráficos{% endblock %}
 
@@ -85,11 +86,11 @@ Gráficos (sem IA)
             <div class="col-md-4" data-view="chart">
                 <label class="form-label">Agregação</label>
                 <select class="form-select" name="agg" id="agg-select">
-                    <option value="count" {% if selected_agg == 'count' %}selected{% endif %}>COUNT</option>
-                    <option value="sum" {% if selected_agg == 'sum' %}selected{% endif %}>SUM</option>
-                    <option value="avg" {% if selected_agg == 'avg' %}selected{% endif %}>AVG</option>
+                    <option value="count" {% if selected_agg == 'count' %}selected{% endif %}>Contagem</option>
+                    <option value="sum" {% if selected_agg == 'sum' %}selected{% endif %}>Soma</option>
+                    <option value="avg" {% if selected_agg == 'avg' %}selected{% endif %}>Média</option>
                 </select>
-                <div class="form-text">COUNT ignora a coluna numérica.</div>
+                <div class="form-text">Contagem ignora a coluna numérica.</div>
             </div>
             <div class="col-md-4" data-view="chart">
                 <label class="form-label">Coluna para agregação</label>
@@ -106,7 +107,7 @@ Gráficos (sem IA)
                     >
                     <div class="typeahead-results d-none" id="value-col-results"></div>
                 </div>
-                <div class="form-text">Para COUNT, a coluna é opcional (usa COUNT(*)).</div>
+                <div class="form-text">Para Contagem, a coluna é desativada.</div>
             </div>
             <div class="col-md-4" data-view="chart">
                 <label class="form-label">Valor do eixo Y (opcional)</label>
@@ -133,18 +134,65 @@ Gráficos (sem IA)
                 </div>
                 <div class="table-cols-list" id="table-cols-list">
                     {% for col in columns %}
-                        <label class="table-cols-item" data-col="{{ col|lower }}">
+                        <label class="table-cols-item" data-col="{{ column_display_map|get_item:col|default:col|lower }}">
                             <input
                                 type="checkbox"
                                 name="table_cols"
                                 value="{{ col }}"
                                 {% if col in selected_table_cols %}checked{% endif %}
                             >
-                            <span>{{ col }}</span>
+                            <span>{{ column_display_map|get_item:col|default:col }}</span>
                         </label>
                     {% endfor %}
                 </div>
+                <div class="form-text text-warning d-none" id="table-cols-groupby-hint">
+                    As colunas da tabela ficam desabilitadas quando o agrupamento está ativo.
+                </div>
                 <div class="form-text">Selecione uma ou mais colunas para a tabela.</div>
+            </div>
+            <div class="col-12 col-md-4" data-view="table">
+                <label class="form-label">Agrupar por (opcional)</label>
+                <div class="typeahead-wrapper">
+                    <input
+                        type="text"
+                        class="form-control"
+                        name="table_group_by"
+                        id="table-group-by-input"
+                        data-source="filter-columns"
+                        data-use-table-filter="1"
+                        placeholder="Selecione ou digite a coluna..."
+                        autocomplete="off"
+                        value="{{ selected_table_group_by }}"
+                    >
+                    <div class="typeahead-results d-none" id="table-group-by-results"></div>
+                </div>
+                <div class="form-text">Se definido, a tabela será agregada por esta coluna.</div>
+            </div>
+            <div class="col-12 col-md-4" data-view="table">
+                <label class="form-label">Agregação</label>
+                <select class="form-select" name="table_group_agg" id="table-group-agg">
+                    <option value="count" {% if selected_table_group_agg == 'count' %}selected{% endif %}>Contagem</option>
+                    <option value="sum" {% if selected_table_group_agg == 'sum' %}selected{% endif %}>Soma</option>
+                    <option value="avg" {% if selected_table_group_agg == 'avg' %}selected{% endif %}>Média</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-4" data-view="table">
+                <label class="form-label">Coluna para agregação</label>
+                <div class="typeahead-wrapper">
+                    <input
+                        type="text"
+                        class="form-control"
+                        name="table_group_value"
+                        id="table-group-value-input"
+                        data-source="value-columns"
+                        data-use-table-filter="1"
+                        placeholder="Selecione ou digite..."
+                        autocomplete="off"
+                        value="{{ selected_table_group_value }}"
+                    >
+                    <div class="typeahead-results d-none" id="table-group-value-results"></div>
+                </div>
+                <div class="form-text">Para opção Contagem, a coluna é desativada.</div>
             </div>
             <div class="col-12">
                 <label class="form-label">Filtros</label>
@@ -196,7 +244,7 @@ Gráficos (sem IA)
                                         data-source="filter-columns"
                                         placeholder="Selecione ou digite..."
                                         autocomplete="off"
-                                        value="{{ row.col }}"
+                                        value="{{ row.display_col }}"
                                     >
                                     <div class="typeahead-results d-none filter-col-results"></div>
                                 </div>
@@ -218,7 +266,7 @@ Gráficos (sem IA)
                                             <option value="{{ value }}"></option>
                                         {% endfor %}
                                     </datalist>
-                                    <div class="form-text text-warning">Muitos valores. Digite para filtrar.</div>
+                                    <div class="form-text text-warning filter-value-hint">Muitos valores. Digite para filtrar.</div>
                                 {% else %}
                                     <select class="form-select filter-value-select" name="filter_value">
                                         <option value="">Todos</option>
@@ -355,10 +403,10 @@ Gráficos (sem IA)
         </div>
     </div>
 </div>
-{{ columns|json_script:"label-columns" }}
-{{ numeric_columns|json_script:"value-columns" }}
-{{ columns|json_script:"filter-columns" }}
-{{ columns|json_script:"all-columns" }}
+{{ display_columns|json_script:"label-columns" }}
+{{ display_numeric_columns|json_script:"value-columns" }}
+{{ display_columns|json_script:"filter-columns" }}
+{{ display_columns|json_script:"all-columns" }}
 {% endblock %}
 
 {% block extra_scripts %}
