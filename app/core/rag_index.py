@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import shutil
 import os
+import shutil
 from pathlib import Path
 from typing import List
 
@@ -21,6 +21,7 @@ def _get_openai_api_key() -> str:
 
 
 def _get_rag_index_path() -> Path:
+    # Observação: FAISS.save_local cria uma pasta. Mantemos isso.
     return Path(getattr(settings, "RAG_INDEX_PATH", Path(settings.BASE_DIR) / "documents" / "faiss_index"))
 
 
@@ -69,6 +70,7 @@ def ingest_docs_to_faiss(paths: List[Path]) -> Path:
 def rebuild_faiss_index(docs_dir: Path) -> Path | None:
     paths = [p for p in docs_dir.glob("*") if p.is_file() and p.suffix.lower() in {".pdf", ".txt"}]
     index_path = _get_rag_index_path()
+
     if not paths:
         if index_path.exists():
             shutil.rmtree(index_path, ignore_errors=True)
@@ -79,6 +81,7 @@ def rebuild_faiss_index(docs_dir: Path) -> Path | None:
     chunk_size, chunk_overlap = _get_chunk_settings()
     splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     splits = splitter.split_documents(docs)
+
     vs = FAISS.from_documents(splits, embedding=embeddings)
     vs.save_local(str(index_path))
     return index_path

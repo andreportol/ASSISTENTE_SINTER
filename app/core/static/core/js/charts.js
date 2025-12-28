@@ -3,6 +3,7 @@
     const labelValueSelect = document.getElementById('label-value-select');
     const valueValueSelect = document.getElementById('value-value-select');
     const viewModeSwitches = document.querySelectorAll('.js-view-mode-switch');
+    const viewModeButtons = document.querySelectorAll('.view-mode-toggle [data-mode]');
     const viewModeInput = document.getElementById('view-mode-input');
     const viewToggles = document.querySelectorAll('.js-view-toggle');
     const generateLabel = document.getElementById('generate-label');
@@ -89,6 +90,51 @@
         });
         renumberFilterRows();
         updateRemoveButtons();
+    };
+
+    const clearChartInputs = () => {
+        const labelCol = document.getElementById('label-col-input');
+        const labelValue = document.getElementById('label-value-select');
+        const valueCol = document.getElementById('value-col-input');
+        const valueValue = document.getElementById('value-value-select');
+        const aggSelect = document.getElementById('agg-select');
+        const chartTypeSelect = document.querySelector('select[name="chart_type"]');
+        if (labelCol) labelCol.value = '';
+        if (labelValue) labelValue.value = '';
+        if (valueCol) valueCol.value = '';
+        if (valueValue) valueValue.value = '';
+        if (aggSelect) {
+            aggSelect.value = 'count';
+            aggSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (chartTypeSelect) chartTypeSelect.value = 'bar';
+        if (limitInput) limitInput.value = '';
+    };
+
+    const clearTableInputs = () => {
+        if (tableColsFilter) tableColsFilter.value = '';
+        if (tableColsList) {
+            tableColsList.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+                checkbox.checked = false;
+            });
+        }
+        if (tableGroupByInput) tableGroupByInput.value = '';
+        if (tableGroupValueInput) tableGroupValueInput.value = '';
+        if (tableGroupAggSelect) {
+            tableGroupAggSelect.value = 'count';
+            tableGroupAggSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    };
+
+    const clearAllInputsForViewChange = () => {
+        resetTableFilter();
+        resetFilterRows();
+        clearChartInputs();
+        clearTableInputs();
+        const tableSelectEl = document.getElementById('table-select');
+        if (tableSelectEl) tableSelectEl.value = '';
+        const hiddenPage = document.getElementById('page-input');
+        if (hiddenPage) hiddenPage.value = '1';
     };
 
     const submitForm = (el, opts = {}) => {
@@ -216,7 +262,16 @@
 
     const renumberFilterRows = () => {
         if (!filterList) return;
-        const rows = filterList.querySelectorAll('.filter-row');
+        const rows = Array.from(filterList.querySelectorAll('.filter-row'));
+        const savedState = new Map();
+        rows.forEach((row) => {
+            const opHidden = row.querySelector('.filter-op-value');
+            const andRadio = row.querySelector('.filter-op-radio[data-op="and"]');
+            const orRadio = row.querySelector('.filter-op-radio[data-op="or"]');
+            savedState.set(row, {
+                op: (opHidden && opHidden.value) || (orRadio && orRadio.checked && 'or') || (andRadio && andRadio.checked && 'and') || '',
+            });
+        });
         rows.forEach((row, idx) => {
             const andRadio = row.querySelector('.filter-op-radio[data-op="and"]');
             const orRadio = row.querySelector('.filter-op-radio[data-op="or"]');
@@ -233,12 +288,23 @@
                 orRadio.id = `filter-op-or-${idx}`;
                 andRadio.disabled = idx === 0;
                 orRadio.disabled = idx === 0;
-                if (idx === 0 && !andRadio.checked && !orRadio.checked) {
+
+                let desired = savedState.get(row)?.op || '';
+                if (!desired) {
+                    desired = idx === 0 ? 'and' : 'or';
+                }
+                if (idx === 0) {
+                    desired = 'and';
+                }
+
+                if (desired === 'or') {
+                    orRadio.checked = true;
+                    andRadio.checked = false;
+                } else {
                     andRadio.checked = true;
+                    orRadio.checked = false;
                 }
-                if (opHidden && idx === 0) {
-                    opHidden.value = 'and';
-                }
+                if (opHidden) opHidden.value = desired;
             }
             if (andLabel && andRadio) {
                 andLabel.setAttribute('for', andRadio.id);
@@ -359,6 +425,7 @@
         addFilterBtn.addEventListener('click', () => {
             const rows = filterList.querySelectorAll('.filter-row');
             if (!rows.length) return;
+            const nextIndex = rows.length;
             const template = rows[rows.length - 1];
             const clone = template.cloneNode(true);
             const input = clone.querySelector('.filter-col-input');
@@ -368,6 +435,10 @@
             const valueList = clone.querySelector('datalist');
             const opHidden = clone.querySelector('.filter-op-value');
             const opRadios = clone.querySelectorAll('.filter-op-radio');
+            const andRadio = clone.querySelector('.filter-op-radio[data-op="and"]');
+            const orRadio = clone.querySelector('.filter-op-radio[data-op="or"]');
+            const andLabel = clone.querySelector('.filter-op-label[data-op="and"]');
+            const orLabel = clone.querySelector('.filter-op-label[data-op="or"]');
             if (input) input.value = '';
             if (results) {
                 results.innerHTML = '';
@@ -381,11 +452,27 @@
             }
             if (valueInput) valueInput.value = '';
             if (valueList) valueList.innerHTML = '';
-            if (opHidden) opHidden.value = 'and';
-            if (opRadios.length) {
-                opRadios.forEach((radio) => {
-                    radio.checked = radio.value === 'and';
-                });
+            if (andRadio && orRadio) {
+                andRadio.disabled = false;
+                orRadio.disabled = false;
+                andRadio.checked = false;
+                orRadio.checked = true;
+                andRadio.name = `filter_op_ui_${nextIndex}`;
+                orRadio.name = `filter_op_ui_${nextIndex}`;
+                andRadio.id = `filter-op-and-${nextIndex}`;
+                orRadio.id = `filter-op-or-${nextIndex}`;
+            }
+            if (opHidden) opHidden.value = 'or';
+            if (andLabel && andRadio) {
+                andLabel.setAttribute('for', andRadio.id);
+            }
+            if (orLabel && orRadio) {
+                orLabel.setAttribute('for', orRadio.id);
+            }
+            if (valueInput && valueList) {
+                const listId = `filter-values-${nextIndex}`;
+                valueList.id = listId;
+                valueInput.setAttribute('list', listId);
             }
             filterList.appendChild(clone);
             initFilterRow(clone);
@@ -446,10 +533,19 @@
         });
     }
 
-    if (viewModeSwitches.length && viewModeInput) {
+    if (viewModeInput && (viewModeSwitches.length || viewModeButtons.length || viewToggles.length)) {
         const setSwitches = (isChart) => {
             viewModeSwitches.forEach((sw) => {
                 sw.checked = isChart;
+            });
+        };
+        const setButtons = (isChart) => {
+            viewModeButtons.forEach((btn) => {
+                const mode = btn.dataset.mode;
+                const isActive = mode === (isChart ? 'chart' : 'table');
+                btn.classList.toggle('btn-primary', isActive);
+                btn.classList.toggle('btn-outline-primary', !isActive);
+                btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
             });
         };
         const syncViewMode = (isChart) => {
@@ -473,30 +569,61 @@
                 const view = el.dataset.view;
                 el.classList.toggle('d-none', view !== (isChart ? 'chart' : 'table'));
             });
+            setSwitches(isChart);
+            setButtons(isChart);
             syncTableColsDisabled();
         };
 
         let currentIsChart = viewModeInput.value
             ? viewModeInput.value === 'chart'
-            : viewModeSwitches[0].checked;
-        setSwitches(currentIsChart);
+            : true;
+        if (!viewModeInput.value && viewModeButtons.length) {
+            const activeButton = Array.from(viewModeButtons).find((btn) => btn.classList.contains('btn-primary'));
+            currentIsChart = activeButton ? activeButton.dataset.mode !== 'table' : true;
+        } else if (!viewModeInput.value && viewModeSwitches.length) {
+            currentIsChart = viewModeSwitches[0].checked;
+        }
         syncViewMode(currentIsChart);
-            const handleViewChange = (isChart) => {
-                if (currentIsChart !== isChart && isChart) {
-                    resetTableFilter();
-                    resetFilterRows();
-                }
-                currentIsChart = isChart;
-                setSwitches(isChart);
-                syncViewMode(isChart);
-                syncTableColsDisabled();
-            };
+        const handleViewChange = (isChart) => {
+            if (currentIsChart !== isChart) {
+                clearAllInputsForViewChange();
+            }
+            currentIsChart = isChart;
+            syncViewMode(isChart);
+            syncTableColsDisabled();
+        };
 
         viewModeSwitches.forEach((sw) => {
             sw.addEventListener('change', () => {
                 const isChart = sw.checked;
                 handleViewChange(isChart);
                 submitForm(sw, { resetPage: true });
+            });
+        });
+
+        const submitViewMode = (btn) => {
+            const form = document.getElementById('chart-form');
+            if (!form) return;
+            if (actionInput) {
+                actionInput.value = 'refresh';
+            }
+            if (pageInput) {
+                pageInput.value = '1';
+            }
+            if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit(btn);
+                return;
+            }
+            submitForm(btn, { resetPage: true });
+        };
+
+        viewModeButtons.forEach((btn) => {
+            btn.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                const mode = btn.dataset.mode;
+                const isChart = mode !== 'table';
+                handleViewChange(isChart);
+                submitViewMode(btn);
             });
         });
 

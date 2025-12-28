@@ -90,6 +90,12 @@ CACHES = {
 # Cache da resposta do agente "Faça sua pergunta"
 ASK_CACHE_TIMEOUT = int(os.getenv("ASK_CACHE_TIMEOUT", "900"))
 
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+CORE_RULES_PATH = BASE_DIR / "documents" / "regras.txt"
+RAG_INDEX_PATH = BASE_DIR / "documents" / "faiss_index"
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases

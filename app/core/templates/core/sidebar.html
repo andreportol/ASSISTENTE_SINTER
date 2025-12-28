@@ -5,11 +5,21 @@
     <ul>
         {% if available_tables %}
             {% for table in available_tables %}
-                <li>
+                <li class="d-flex align-items-center justify-content-between gap-2">
                     <div class="doc-meta">
                         <i class="fas fa-database text-warning"></i>
                         <span class="doc-name">{{ table }}</span>
                     </div>
+                    <button
+                        type="button"
+                        class="btn btn-outline-info btn-xs"
+                        data-table="{{ table }}"
+                        data-bs-toggle="modal"
+                        data-bs-target="#table-columns-modal"
+                        title="Ver colunas"
+                    >
+                        <i class="fas fa-columns"></i>
+                    </button>
                 </li>
             {% endfor %}
         {% else %}
@@ -22,7 +32,7 @@
         {% endif %}
         {% if available_docs %}
             {% for doc in available_docs %}
-                <li>
+                <li class="d-flex align-items-center justify-content-between gap-2">
                     <div class="doc-meta">
                         <i class="fas fa-file-alt text-primary"></i>
                         <span class="doc-name">{{ doc }}</span>
@@ -30,7 +40,17 @@
                             <span class="using">(usando)</span>
                         {% endif %}
                     </div>
-                    <div class="doc-actions">
+                    <div class="doc-actions d-flex align-items-center gap-2">
+                        <button
+                            type="button"
+                            class="btn btn-outline-secondary btn-xs js-preview-doc"
+                            data-doc="{{ doc }}"
+                            data-bs-toggle="modal"
+                            data-bs-target="#doc-preview-modal"
+                            title="Pré-visualizar conteúdo"
+                        >
+                            <i class="fas fa-eye"></i>
+                        </button>
                         <form method="post">
                             {% csrf_token %}
                             <input type="hidden" name="doc_name" value="{{ doc }}">
@@ -180,3 +200,92 @@
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="table-columns-modal" tabindex="-1" aria-labelledby="table-columns-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-dark" id="table-columns-modal-label">
+                    <i class="fas fa-columns me-2 text-dark"></i>Colunas da tabela
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="table-columns-content" class="text-muted">Selecione uma tabela para ver as colunas.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="doc-preview-modal" tabindex="-1" aria-labelledby="doc-preview-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-dark" id="doc-preview-modal-label">
+                    <i class="fas fa-eye me-2 text-dark"></i>Pré-visualização do documento
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="doc-preview-content" class="text-muted">Selecione um documento para visualizar.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ table_columns_map|json_script:"table-columns-map" }}
+{{ doc_previews|json_script:"doc-previews-map" }}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const tableColumnsEl = document.getElementById('table-columns-map');
+        const docPreviewsEl = document.getElementById('doc-previews-map');
+        const tableColumnsContent = document.getElementById('table-columns-content');
+        const tableColumnsTitle = document.getElementById('table-columns-modal-label');
+        const docPreviewContent = document.getElementById('doc-preview-content');
+        const docPreviewTitle = document.getElementById('doc-preview-modal-label');
+
+        const tableMap = tableColumnsEl ? JSON.parse(tableColumnsEl.textContent || '{}') : {};
+        const docMap = docPreviewsEl ? JSON.parse(docPreviewsEl.textContent || '{}') : {};
+
+        document.querySelectorAll('[data-table]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const table = btn.dataset.table;
+                const cols = tableMap[table] || [];
+                if (tableColumnsTitle) {
+                    tableColumnsTitle.innerHTML = `<i class="fas fa-columns me-2 text-dark"></i>Colunas da tabela ${table}`;
+                }
+                if (tableColumnsContent) {
+                    if (!cols.length) {
+                        tableColumnsContent.innerHTML = '<div class="alert alert-secondary mb-0">Nenhuma coluna disponível para esta tabela.</div>';
+                    } else {
+                        tableColumnsContent.innerHTML = '<ul class="list-group">' + cols.map((c) => `<li class="list-group-item">${c}</li>`).join('') + '</ul>';
+                    }
+                }
+            });
+        });
+
+        document.querySelectorAll('.js-preview-doc').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const doc = btn.dataset.doc;
+                const preview = docMap[doc] || '';
+                if (docPreviewTitle) {
+                    docPreviewTitle.innerHTML = `<i class="fas fa-eye me-2 text-dark"></i>${doc}`;
+                }
+                if (docPreviewContent) {
+                    if (!preview) {
+                        docPreviewContent.innerHTML = '<div class="alert alert-secondary mb-0">Pré-visualização indisponível para este documento.</div>';
+                    } else {
+                        const safeText = preview.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\n/g, '<br>');
+                        docPreviewContent.innerHTML = `<pre class="mb-0">${safeText}</pre>`;
+                    }
+                }
+            });
+        });
+    });
+</script>

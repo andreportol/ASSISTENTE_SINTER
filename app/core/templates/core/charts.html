@@ -18,31 +18,52 @@ Filtros (sem IA)
 <div class="charts-page">
     <div class="container-fluid px-0">
         <div class="row g-4 mx-0">
-            <div class="col-12 col-lg-3 ps-0">
-                <div class="sidebar">
-                <h5 class="d-flex align-items-center mb-3">
-                    <i class="fas fa-layer-group me-2 text-info"></i>Visualização
-                </h5>
-                <div class="view-toggle js-view-toggle mb-3">
-                    <div class="view-toggle__chip" data-mode="chart">
-                        <i class="fas fa-chart-column me-1"></i>Gráfico
+            <div class="col-12 col-lg-2 ps-0">
+                <div class="sidebar sidebar--compact view-mode-card">
+
+                    <h5 class="d-flex align-items-center mb-2">
+                        <i class="fas fa-layer-group me-2 text-info"></i>Visualização
+                    </h5>
+
+                    <!-- VISUALIZAÇÃO: CONTROLE ÚNICO -->
+                    <div class="btn-group w-100 mb-2 view-mode-toggle view-mode-toggle--compact" role="group">
+                        <button
+                            type="submit"
+                            form="chart-form"
+                            name="view_mode_select"
+                            value="chart"
+                            class="btn {% if view_mode != 'table' %}btn-primary{% else %}btn-outline-primary{% endif %}"
+                            data-mode="chart"
+                            aria-pressed="{% if view_mode != 'table' %}true{% else %}false{% endif %}"
+                        >
+                            <i class="fas fa-chart-column me-1"></i>
+                            Gráfico
+                        </button>
+
+                        <button
+                            type="submit"
+                            form="chart-form"
+                            name="view_mode_select"
+                            value="table"
+                            class="btn {% if view_mode == 'table' %}btn-primary{% else %}btn-outline-primary{% endif %}"
+                            data-mode="table"
+                            aria-pressed="{% if view_mode == 'table' %}true{% else %}false{% endif %}"
+                        >
+                            <i class="fas fa-table me-1"></i>
+                            Tabela
+                        </button>
                     </div>
-                    <div class="form-check form-switch m-0">
-                        <input class="form-check-input js-view-mode-switch" type="checkbox" role="switch" id="view-mode-switch-side" {% if view_mode != 'table' %}checked{% endif %}>
-                        <label class="form-check-label" for="view-mode-switch-side">
-                            <span class="visually-hidden">Alternar visualização</span>
-                        </label>
-                    </div>
-                    <div class="view-toggle__chip" data-mode="table">
-                        <i class="fas fa-table me-1"></i>Tabela
-                    </div>
+
+                    <p class="text-white small mb-0 opacity-75">
+                        Escolha como deseja visualizar os dados.
+                    </p>
+
                 </div>
-                <p class="text-white small mb-0">Alterne entre gráfico e tabela para desbloquear as opções específicas.</p>
             </div>
-        </div>
-        <div class="col-12 col-lg-8">
-            <div class="document-container panel-sidebar">
-        <h4 class="mb-3"><i class="fas fa-sliders-h me-2"></i>Gerar gráfico</h4>
+
+            <div class="col-12 col-lg-9 pe-0">
+                <div class="document-container panel-sidebar">
+        <h4 class="mb-3"><i class="fas fa-sliders-h me-2"></i>Filtrar Dados</h4>
         <form method="post" class="row g-3" id="chart-form">
             {% csrf_token %}
             <input type="hidden" name="view_mode" id="view-mode-input" value="{{ view_mode|default:'chart' }}">
@@ -57,7 +78,7 @@ Filtros (sem IA)
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-12 col-md-4" data-view="chart">
+            <div class="col-12 col-md-4 {% if view_mode == 'table' %}d-none{% endif %}" data-view="chart">
                 <label class="form-label">Eixo X (categoria)</label>
                 <div class="typeahead-wrapper">
                     <input
@@ -73,7 +94,7 @@ Filtros (sem IA)
                     <div class="typeahead-results d-none" id="label-col-results"></div>
                 </div>
             </div>
-            <div class="col-12 col-md-4" data-view="chart">
+            <div class="col-12 col-md-4 {% if view_mode == 'table' %}d-none{% endif %}" data-view="chart">
                 <label class="form-label">Valor do eixo X (opcional)</label>
                 <select class="form-select" name="label_value" id="label-value-select">
                     <option value="">Todos</option>
@@ -83,7 +104,7 @@ Filtros (sem IA)
                 </select>
                 <div class="form-text">Filtra apenas um registro da coluna do eixo X.</div>
             </div>
-            <div class="col-md-4" data-view="chart">
+            <div class="col-md-4 {% if view_mode == 'table' %}d-none{% endif %}" data-view="chart">
                 <label class="form-label">Agregação</label>
                 <select class="form-select" name="agg" id="agg-select">
                     <option value="count" {% if selected_agg == 'count' %}selected{% endif %}>Contagem</option>
@@ -92,7 +113,7 @@ Filtros (sem IA)
                 </select>
                 <div class="form-text">Contagem ignora a coluna numérica.</div>
             </div>
-            <div class="col-md-4" data-view="chart">
+            <div class="col-md-4 {% if view_mode == 'table' %}d-none{% endif %}" data-view="chart">
                 <label class="form-label">Coluna para agregação</label>
                 <div class="typeahead-wrapper">
                     <input
@@ -109,7 +130,7 @@ Filtros (sem IA)
                 </div>
                 <div class="form-text">Para Contagem, a coluna é desativada.</div>
             </div>
-            <div class="col-md-4" data-view="chart">
+            <div class="col-md-4 {% if view_mode == 'table' %}d-none{% endif %}" data-view="chart">
                 <label class="form-label">Valor do eixo Y (opcional)</label>
                 <select class="form-select" name="value_value" id="value-value-select">
                     <option value="">Todos</option>
@@ -119,7 +140,7 @@ Filtros (sem IA)
                 </select>
                 <div class="form-text">Filtra registros pela coluna selecionada.</div>
             </div>
-            <div class="col-12 col-md-6" data-view="table">
+            <div class="col-12 col-md-6 {% if view_mode != 'table' %}d-none{% endif %}" data-view="table">
                 <label class="form-label">Colunas da tabela</label>
                 <input
                     type="text"
@@ -150,7 +171,7 @@ Filtros (sem IA)
                 </div>
                 <div class="form-text">Selecione uma ou mais colunas para a tabela.</div>
             </div>
-            <div class="col-12 col-md-4" data-view="table">
+            <div class="col-12 col-md-4 {% if view_mode != 'table' %}d-none{% endif %}" data-view="table">
                 <label class="form-label">Agrupar por (opcional)</label>
                 <div class="typeahead-wrapper">
                     <input
@@ -168,7 +189,7 @@ Filtros (sem IA)
                 </div>
                 <div class="form-text">Se definido, a tabela será agregada por esta coluna.</div>
             </div>
-            <div class="col-12 col-md-4" data-view="table">
+            <div class="col-12 col-md-4 {% if view_mode != 'table' %}d-none{% endif %}" data-view="table">
                 <label class="form-label">Agregação</label>
                 <select class="form-select" name="table_group_agg" id="table-group-agg">
                     <option value="count" {% if selected_table_group_agg == 'count' %}selected{% endif %}>Contagem</option>
@@ -176,7 +197,7 @@ Filtros (sem IA)
                     <option value="avg" {% if selected_table_group_agg == 'avg' %}selected{% endif %}>Média</option>
                 </select>
             </div>
-            <div class="col-12 col-md-4" data-view="table">
+            <div class="col-12 col-md-4 {% if view_mode != 'table' %}d-none{% endif %}" data-view="table">
                 <label class="form-label">Coluna para agregação</label>
                 <div class="typeahead-wrapper">
                     <input
@@ -293,8 +314,8 @@ Filtros (sem IA)
                     <i class="fas fa-plus me-1"></i>Adicionar filtro
                 </button>
             </div>
-            <div class="w-100 d-none d-md-block" data-view="chart"></div>
-            <div class="col-md-4" data-view="chart">
+            <div class="w-100 d-none {% if view_mode != 'table' %}d-md-block{% endif %}" data-view="chart"></div>
+            <div class="col-md-4 {% if view_mode == 'table' %}d-none{% endif %}" data-view="chart">
                 <label class="form-label">Tipo de gráfico</label>
                 <select class="form-select" name="chart_type">
                     <option value="bar" {% if selected_chart_type == 'bar' %}selected{% endif %}>Barras</option>
@@ -302,7 +323,7 @@ Filtros (sem IA)
                     <option value="pie" {% if selected_chart_type == 'pie' %}selected{% endif %}>Pizza</option>
                 </select>
             </div>
-            <div class="col-md-3" data-view="chart">
+            <div class="col-md-3 {% if view_mode == 'table' %}d-none{% endif %}" data-view="chart">
                 <label class="form-label">Limite</label>
                 <input type="number" class="form-control" name="limit" id="limit-input" value="{{ selected_limit }}" min="1" max="200">
             </div>
@@ -331,72 +352,9 @@ Filtros (sem IA)
 
     {% if chart_data or table_rows %}
         {% if view_mode == 'table' %}
-            <div class="document-container panel-sidebar chart-card chart-card--compact mt-3">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h5 class="mb-0">
-                                <i class="fas fa-table me-2"></i>Resultado da consulta
-                                <small class="text-white ms-2">({{ total_rows }} linhas)</small>
-                            </h5>
-                    <div class="d-flex gap-2">
-                        <button class="btn btn-outline-light btn-sm download-csv" type="button" data-action="download_csv">
-                            <i class="fas fa-download me-1"></i>Baixar CSV
-                        </button>
-                    </div>
-                </div>
-                {% if table_rows %}
-                    <div class="table-responsive">
-                        <table class="table table-primary table-striped align-middle mb-0">
-                            <thead>
-                                <tr>
-                                    {% for header in table_headers %}
-                                        <th scope="col">{{ header }}</th>
-                                    {% endfor %}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for row in table_rows %}
-                                    <tr>
-                                        {% for cell in row %}
-                                            <td>{{ cell }}</td>
-                                        {% endfor %}
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% if total_pages > 1 %}
-                        <div class="d-flex justify-content-between align-items-center mt-3">
-                            <small class="text-white">Página {{ page }} de {{ total_pages }} ({{ total_rows }} registros)</small>
-                            <div class="btn-group">
-                                <button class="btn btn-outline-secondary btn-sm js-page-btn" type="button" data-page="{{ page|add:'-1' }}" {% if page <= 1 %}disabled{% endif %}>Anterior</button>
-                                <button class="btn btn-outline-secondary btn-sm js-page-btn" type="button" data-page="{{ page|add:'1' }}" {% if page >= total_pages %}disabled{% endif %}>Próxima</button>
-                            </div>
-                        </div>
-                    {% endif %}
-                {% else %}
-                    <div class="alert alert-secondary mb-0">Nenhum dado encontrado para a consulta.</div>
-                {% endif %}
-            </div>
+            {% include "core/tabela.html" %}
         {% else %}
-            {% if chart_data %}
-                <div class="document-container panel-sidebar chart-card chart-card--compact mt-3">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>{{ chart_data.title }}</h5>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-outline-light btn-sm download-csv" type="button" data-action="download_csv">
-                                <i class="fas fa-download me-1"></i>Baixar CSV
-                            </button>
-                            <button class="btn btn-outline-light btn-sm" type="button" id="download-chart">
-                                <i class="fas fa-image me-1"></i>Baixar PNG
-                            </button>
-                        </div>
-                    </div>
-                    <canvas id="result-chart" height="280"></canvas>
-                </div>
-                {{ chart_data|json_script:"chart-data" }}
-            {% else %}
-                <div class="alert alert-secondary">Nenhum dado encontrado para a consulta.</div>
-            {% endif %}
+            {% include "core/grafico.html" %}
         {% endif %}
     {% endif %}
             </div>

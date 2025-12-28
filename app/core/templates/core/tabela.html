@@ -1,0 +1,46 @@
+<div class="document-container panel-sidebar chart-card chart-card--compact mt-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">
+            <i class="fas fa-table me-2"></i>Resultado da consulta
+            <small class="text-white ms-2">({{ total_rows }} linhas)</small>
+        </h5>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-light btn-sm download-csv" type="button" data-action="download_csv">
+                <i class="fas fa-download me-1"></i>Baixar CSV
+            </button>
+        </div>
+    </div>
+    {% if table_rows %}
+        <div class="table-responsive">
+            <table class="table table-primary table-striped align-middle mb-0">
+                <thead>
+                    <tr>
+                        {% for header in table_headers %}
+                            <th scope="col">{{ header }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in table_rows %}
+                        <tr>
+                            {% for cell in row %}
+                                <td>{{ cell }}</td>
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if total_pages > 1 %}
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <small class="text-white">Página {{ page }} de {{ total_pages }} ({{ total_rows }} registros)</small>
+                <div class="btn-group">
+                    <button class="btn btn-outline-secondary btn-sm js-page-btn" type="button" data-page="{{ page|add:'-1' }}" {% if page <= 1 %}disabled{% endif %}>Anterior</button>
+                    <button class="btn btn-outline-secondary btn-sm js-page-btn" type="button" data-page="{{ page|add:'1' }}" {% if page >= total_pages %}disabled{% endif %}>Próxima</button>
+                </div>
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="alert alert-secondary mb-0">Nenhum dado encontrado para a consulta.</div>
+    {% endif %}
+</div>
